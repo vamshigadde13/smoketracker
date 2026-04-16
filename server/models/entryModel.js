@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 
+const objectId = mongoose.Schema.Types.ObjectId;
+
 const entrySchema = new mongoose.Schema(
     {
         userId: {
-            type: mongoose.Schema.Types.ObjectId,
+            type: objectId,
             ref: "User",
             required: true,
             index: true
@@ -29,6 +31,25 @@ const entrySchema = new mongoose.Schema(
             required: true,
             default: Date.now,
             index: true
+        },
+        shareToCircle: {
+            type: Boolean,
+            default: false
+        },
+        shareCircleIds: {
+            type: [objectId],
+            ref: "Circle",
+            default: []
+        },
+        shareFriendIds: {
+            type: [objectId],
+            ref: "User",
+            default: []
+        },
+        circleId: {
+            type: objectId,
+            ref: "Circle",
+            default: null
         }
     },
     { timestamps: true }

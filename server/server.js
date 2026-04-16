@@ -9,6 +9,9 @@ import brandsRoutes from "./routes/brandsRoutes.js";
 import presetsRoutes from "./routes/presetsRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import notificationSettingsRoutes from "./routes/notificationSettingsRoutes.js";
+import friendsRoutes from "./routes/friendsRoutes.js";
+import circlesRoutes from "./routes/circlesRoutes.js";
+import pushTokenRoutes from "./routes/pushTokenRoutes.js";
 
 dotenv.config();
 
@@ -52,6 +55,9 @@ app.use("/api/v1/brands", brandsRoutes);
 app.use("/api/v1/presets", presetsRoutes);
 app.use("/api/v1/profile", profileRoutes);
 app.use("/api/v1/notification-settings", notificationSettingsRoutes);
+app.use("/api/v1/friends", friendsRoutes);
+app.use("/api/v1/circles", circlesRoutes);
+app.use("/api/v1/push-tokens", pushTokenRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

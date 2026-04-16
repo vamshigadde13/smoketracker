@@ -1,13 +1,15 @@
 import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { generateUniqueCode } from "../utils/friendCode.js";
 
 // Ensure we have a JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-123';
+const UNIQUE_CODE_REGEX = /^[a-z0-9_]{3,24}#[0-9]{4}$/;
 
 const registerUser = async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password, uniqueCode: requestedUniqueCode } = req.body;
         const normalizedUsername = String(username || "").trim().toLowerCase();
 
         // Validate required fields
@@ -35,10 +37,40 @@ const registerUser = async (req, res) => {
 
         const displayName = normalizedUsername;
 
+        let uniqueCode = "";
+        const normalizedRequestedCode = String(requestedUniqueCode || "").trim().toLowerCase();
+        if (normalizedRequestedCode) {
+            if (!UNIQUE_CODE_REGEX.test(normalizedRequestedCode)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Unique code must match format name#1234",
+                });
+            }
+            const [codeNamePart] = normalizedRequestedCode.split("#");
+            if (codeNamePart !== normalizedUsername) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Unique code name must match your username",
+                });
+            }
+            const existingUniqueCode = await User.findOne({ uniqueCode: normalizedRequestedCode });
+            if (existingUniqueCode) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Unique code already exists",
+                    conflict: "uniqueCode",
+                });
+            }
+            uniqueCode = normalizedRequestedCode;
+        } else {
+            uniqueCode = await generateUniqueCode(normalizedUsername);
+        }
+
         // Create new user
         const newUser = new User({
             username: normalizedUsername,
             displayName,
+            uniqueCode,
             passwordHash,
             avatarUrl: req.body.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`
         });
@@ -140,12 +172,8 @@ const loginUser = async (req, res) => {
             _id: user._id,
             username: user.username,
             displayName: user.displayName,
-            showMobile: user.showMobile,
-            friends: user.friends,
-            individualPoints: user.individualPoints,
-            teamPoints: user.teamPoints,
-            stats: user.stats,
             avatarUrl: user.avatarUrl,
+            uniqueCode: user.uniqueCode || "",
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
         };

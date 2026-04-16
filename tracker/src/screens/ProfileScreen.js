@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { MessageModal } from "../components/MessageModal";
 import { computeLoggingHighlights, formatDayKeyShort } from "../utils/date";
@@ -19,6 +20,8 @@ import {
 import { clearStoredAuthToken } from "../services/authProfile";
 
 export function ProfileScreen({
+  username = "",
+  uniqueCode = "",
   onProfileSaved,
   onLoggedOut,
   syncStatus,
@@ -37,7 +40,9 @@ export function ProfileScreen({
   const [aboutEditing, setAboutEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savedVisible, setSavedVisible] = useState(false);
+  const [copiedCodeVisible, setCopiedCodeVisible] = useState(false);
   const [pendingDangerAction, setPendingDangerAction] = useState(null);
+  const [notifSaving, setNotifSaving] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showLoggedOutInfo, setShowLoggedOutInfo] = useState(false);
   const [showClearedInfo, setShowClearedInfo] = useState(false);
@@ -107,8 +112,16 @@ export function ProfileScreen({
     setShowClearedInfo(true);
   };
   const updateNotif = useCallback(
-    (partial) => notificationSettings && onUpdateNotificationSettings?.({ ...notificationSettings, ...partial }),
-    [notificationSettings, onUpdateNotificationSettings]
+    async (partial) => {
+      if (!notificationSettings || notifSaving) return;
+      setNotifSaving(true);
+      try {
+        await onUpdateNotificationSettings?.({ ...notificationSettings, ...partial });
+      } finally {
+        setNotifSaving(false);
+      }
+    },
+    [notificationSettings, onUpdateNotificationSettings, notifSaving]
   );
   const handleLogout = async () => {
     if (onLoggedOut) {
@@ -119,6 +132,13 @@ export function ProfileScreen({
     setShowLogoutConfirm(false);
     setShowLoggedOutInfo(true);
     onProfileSaved?.();
+  };
+  const handleCopyUniqueCode = async () => {
+    const value = String(uniqueCode || "").trim();
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setCopiedCodeVisible(true);
+    setTimeout(() => setCopiedCodeVisible(false), 1200);
   };
 
   if (loading) return <SafeAreaView edges={["top"]} className="flex-1 items-center justify-center bg-gray-50"><Text className="text-gray-500">Loading...</Text></SafeAreaView>;
@@ -138,16 +158,39 @@ export function ProfileScreen({
           </View>
           {!aboutEditing ? (
             <>
-              <AboutReadRow label="Name" value={form.name} />
+              <AboutReadRow label="Username" value={username} sub="Registration username" />
+              <View className="mb-3">
+                <Text className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Unique code</Text>
+                <Text className="mb-1 text-[10px] text-gray-400">Used by friends to add you</Text>
+                <View className="flex-row items-center justify-between">
+                  <Text className={`mr-3 flex-1 text-base ${uniqueCode?.trim() ? "text-gray-900" : "text-gray-400"}`} numberOfLines={2}>
+                    {uniqueCode?.trim() ? uniqueCode.trim() : "—"}
+                  </Text>
+                  <Pressable
+                    disabled={!uniqueCode?.trim()}
+                    className={`rounded-lg px-3 py-1.5 ${uniqueCode?.trim() ? "bg-gray-100" : "bg-gray-200"}`}
+                    onPress={handleCopyUniqueCode}
+                  >
+                    <Text className={`text-xs font-semibold ${uniqueCode?.trim() ? "text-gray-800" : "text-gray-500"}`}>
+                      {copiedCodeVisible ? "Copied" : "Copy"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
               <AboutReadRow label="Alias" value={form.alias} sub="Shown on Home when set" />
               <AboutReadRow label="Bio" value={form.bio} multiline />
             </>
           ) : (
             <>
-              <Text className="mb-1 text-sm font-medium text-gray-600">Name</Text>
+              <Text className="mb-1 text-sm font-medium text-gray-600">Username</Text>
               <View className="mb-3 rounded-xl border border-gray-200 bg-gray-100 px-3 py-3">
-                <Text className="text-gray-700">{form.name?.trim() ? form.name : "—"}</Text>
-                <Text className="mt-1 text-xs text-gray-500">Registration name cannot be changed.</Text>
+                <Text className="text-gray-700">{username?.trim() ? username : "—"}</Text>
+                <Text className="mt-1 text-xs text-gray-500">Username cannot be changed.</Text>
+              </View>
+              <Text className="mb-1 text-sm font-medium text-gray-600">Unique code</Text>
+              <View className="mb-3 rounded-xl border border-gray-200 bg-gray-100 px-3 py-3">
+                <Text className="text-gray-700">{uniqueCode?.trim() ? uniqueCode : "—"}</Text>
+                <Text className="mt-1 text-xs text-gray-500">Your code is fixed and cannot be changed.</Text>
               </View>
               <Text className="mb-1 text-sm font-medium text-gray-600">Alias</Text>
               <TextInput value={draft.alias} onChangeText={(t) => setDraft((p) => ({ ...p, alias: t }))} className="mb-3 rounded-xl border border-gray-200 px-3 py-3 text-gray-900" />
@@ -209,12 +252,14 @@ export function ProfileScreen({
               label="Daily check-in"
               sub="One reminder each day"
               value={Boolean(notificationSettings?.enabledDailyCheckin)}
+              disabled={notifSaving}
               onToggle={(next) => updateNotif({ enabledDailyCheckin: next })}
             />
             <SettingToggleRow
               label="No-log nudge"
               sub="Only if no log today"
               value={Boolean(notificationSettings?.enabledNoLogNudge)}
+              disabled={notifSaving}
               onToggle={(next) => updateNotif({ enabledNoLogNudge: next })}
             />
           </View>
@@ -224,30 +269,42 @@ export function ProfileScreen({
               label="Quiet hours"
               sub="Pause reminders overnight"
               value={Boolean(notificationSettings?.quietHoursEnabled)}
+              disabled={notifSaving}
               onToggle={(next) => updateNotif({ quietHoursEnabled: next })}
             />
             <TimeAdjustRow
               label="Reminder time"
               value={notificationSettings?.dailyTime}
+              disabled={notifSaving}
               onChange={(time) => updateNotif({ dailyTime: time })}
             />
             <TimeAdjustRow
               label="Quiet start"
               value={notificationSettings?.quietStart}
-              disabled={!notificationSettings?.quietHoursEnabled}
+              disabled={!notificationSettings?.quietHoursEnabled || notifSaving}
               onChange={(time) => updateNotif({ quietStart: time })}
             />
             <TimeAdjustRow
               label="Quiet end"
               value={notificationSettings?.quietEnd}
-              disabled={!notificationSettings?.quietHoursEnabled}
+              disabled={!notificationSettings?.quietHoursEnabled || notifSaving}
               onChange={(time) => updateNotif({ quietEnd: time })}
             />
           </View>
 
+          <Text className="mb-2 text-xs text-gray-500">
+            Push reminder testing is most reliable on your release APK. Expo Go may not reflect final device behavior.
+          </Text>
+
           {!hasNotifPermission && notificationsEnabled ? (
-            <Pressable className="self-start rounded-lg bg-amber-100 px-3 py-2" onPress={onRequestNotificationPermission}>
-              <Text className="font-semibold text-amber-900">Enable notifications</Text>
+            <Pressable
+              disabled={notifSaving}
+              className={`self-start rounded-lg px-3 py-2 ${notifSaving ? "bg-gray-200" : "bg-amber-100"}`}
+              onPress={onRequestNotificationPermission}
+            >
+              <Text className={`font-semibold ${notifSaving ? "text-gray-600" : "text-amber-900"}`}>
+                {notifSaving ? "Saving..." : "Enable notifications"}
+              </Text>
             </Pressable>
           ) : null}
         </View>
@@ -407,11 +464,15 @@ function AboutReadRow({ label, value, sub, multiline }) {
   );
 }
 
-function SettingToggleRow({ label, sub, value, onToggle }) {
+function SettingToggleRow({ label, sub, value, onToggle, disabled }) {
   return (
-    <View className="mb-3 flex-row items-center justify-between">
+    <View className={`mb-3 flex-row items-center justify-between ${disabled ? "opacity-60" : ""}`}>
       <View className="mr-3 flex-1"><Text className="text-sm font-semibold text-gray-900">{label}</Text><Text className="text-xs text-gray-500">{sub}</Text></View>
-      <Pressable className={`rounded-full px-3 py-1.5 ${value ? "bg-emerald-600" : "bg-gray-300"}`} onPress={() => onToggle(!value)}><Text className={`text-xs font-semibold ${value ? "text-white" : "text-gray-700"}`}>{value ? "On" : "Off"}</Text></Pressable>
+      <Pressable
+        disabled={disabled}
+        className={`rounded-full px-3 py-1.5 ${value ? "bg-emerald-600" : "bg-gray-300"}`}
+        onPress={() => onToggle(!value)}
+      ><Text className={`text-xs font-semibold ${value ? "text-white" : "text-gray-700"}`}>{value ? "On" : "Off"}</Text></Pressable>
     </View>
   );
 }

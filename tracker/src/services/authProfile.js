@@ -64,6 +64,7 @@ export const getLoggedInUserProfile = async () => {
       name: registrationName,
       username: String(user.username || "").trim(),
       displayName: String(user.displayName || "").trim(),
+      uniqueCode: String(user.uniqueCode || "").trim(),
     };
   } catch {
     return null;

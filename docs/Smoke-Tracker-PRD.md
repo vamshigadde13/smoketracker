@@ -10,9 +10,10 @@
 
 A mobile app that helps users track smoking habits by logging each session and viewing simple analytics: frequency, brands, spend, and patterns.
 
-- **Offline-first:** data stays on the device (AsyncStorage).
+- **Account-based:** users sign up and sign in before tracking.
+- **Offline-tolerant:** writes are applied locally first and queued for background sync when network is unavailable.
 - **Fast, minimal UX:** goal is to log in seconds.
-- **Companion server:** optional Express API scaffold (in-memory); the shipped app does not require it for daily use.
+- **Hosted API backend:** app defaults to the deployed API, with env-based base URL override support.
 
 ## 2. Goals
 
@@ -26,10 +27,11 @@ A mobile app that helps users track smoking habits by logging each session and v
 
 - Support reduction through awareness (no medical claims).
 - Keep logging to 1–2 taps where possible.
+- Keep data resilient across unstable connectivity with automatic sync recovery.
 
 ## 3. Target users
 
-People who want to track usage, compare days, and understand patterns without signing up or syncing to the cloud.
+People who want to track usage, compare days, and understand patterns with a simple account-based experience and reliable sync.
 
 ## 4. Shipped features (current build)
 
@@ -38,6 +40,14 @@ People who want to track usage, compare days, and understand patterns without si
 - **Frontend:** React Native (Expo), JavaScript, NativeWind (Tailwind-style).
 - **Persistence:** `@react-native-async-storage/async-storage`.
 - **Navigation:** bottom tabs (React Navigation).
+- **Backend access:** token-authenticated API (`fetch`/`axios`) with hosted default base URL.
+
+### 4.0 Authentication
+
+- **Sign up:** create account using username + password.
+- **Sign in:** authenticate and store token locally for subsequent API requests.
+- **Session gate:** unauthenticated users see Login/Register flow; authenticated users enter main tracker tabs.
+- **Logout:** Profile action clears auth token on device.
 
 ### 4.1 Home
 
@@ -76,8 +86,11 @@ People who want to track usage, compare days, and understand patterns without si
 ### 4.5 Profile
 
 - Editable profile: name, alias, bio (local).
+- Name is registration-controlled; alias and bio are editable in app.
 - **Your data:** export `.xlsx` (multi-sheet) with CSV fallback; share via device sheet; no upload.
-- **Danger zone:** clear all local data (confirmed).
+- **Notifications:** daily check-in / no-log nudge toggles, quiet hours, reminder time, permission prompt.
+- **Sync status:** queued operations count, last success time, last error, and manual "Sync now" action.
+- **Danger zone:** clear logs+brands, presets, profile, or all app data (confirmed).
 - Stats: logs, brands, presets counts.
 - Header subtitle: “On this device”.
 
@@ -86,7 +99,16 @@ People who want to track usage, compare days, and understand patterns without si
 - Create / edit / delete: brand, quantity, optional cost per smoke.
 - Used for quick logging from Home and the add modal.
 
-### 4.7 Shared UI
+### 4.7 Friends & Circles (optional)
+
+- **Friend code:** each user gets a unique `<username>#NNNN` code at signup.
+- **Add friend:** send request via friend code or QR payload (`app://add-friend?code=<friendCode>`).
+- **Mutual model:** requests are pending until accepted; no public follower graph.
+- **Circles:** private small groups for sharing logs (2-10 members).
+- **Share toggle on log:** users explicitly choose per-entry share (`shareToCircle` + `circleId`).
+- **Live circle notifications:** default OFF, controlled at circle level, triggered only on explicitly shared logs.
+
+### 4.8 Shared UI
 
 - **ConfirmModal** for destructive actions.
 - **MessageModal** for non-blocking messages (e.g. export errors).
@@ -96,12 +118,19 @@ People who want to track usage, compare days, and understand patterns without si
 
 | Entity | Fields |
 |--------|--------|
-| Smoke entry | id, timestamp, brand, quantity, optional cost |
+| Smoke entry | id, timestamp, brand, quantity, optional cost, shareToCircle, optional circleId |
 | Brand | id, name |
 | Preset | id, brand, quantity, optional costPerSmoke |
 | Profile | name, alias, bio (+ extensions in storage) |
+| Notification settings | enabledDailyCheckin, enabledNoLogNudge, dailyTime, quiet hours, permissionAsked |
+| Sync queue op | entity, op, payload, queued timestamps/status |
+| Auth/session | token (device storage), user identity from auth endpoints |
+| Friend | id, userId, friendUserId, status |
+| Circle | id, name, createdBy |
+| Circle member | id, circleId, userId, role |
+| Circle settings | circleId, liveNotificationsEnabled (default false) |
 
-All JSON in AsyncStorage (`tracker/src/constants/storageKeys`).
+Primary data is API-backed with AsyncStorage cache + queue-based offline fallback (`tracker/src/services/storage.js` and sync queue helpers).
 
 ## 6. Analytics (implemented)
 
@@ -109,27 +138,36 @@ All JSON in AsyncStorage (`tracker/src/constants/storageKeys`).
 - Brand counts; peak hour; morning / afternoon / evening / night buckets.
 - Spend sums where cost is present.
 
-## 7. Non-goals (v1)
+## 7. Sync behavior (implemented)
 
-- No login/signup.
-- No cloud sync in-app (manual export only).
+- Local-first writes for entries, brands, presets, profile, and notification settings.
+- On API failure, operations are queued and retried via flush on app activation and refresh.
+- Read paths prefer API and fall back to local cache when unavailable.
+- Profile shows queue health and supports manual sync trigger.
+
+## 8. Non-goals (v1)
+
+- No multi-account switching on a single session flow.
+- No public social feed or global user search.
 - No social features or ads.
 
-## 8. Future enhancements
+## 9. Future enhancements
 
 - Goals (e.g. max smokes per day), reminders.
 - Charts (line/pie) where they add clear value.
-- Optional cloud backup.
+- Stronger conflict resolution semantics for offline edits.
 - iOS polish and store checklist.
 
-## 9. Success metrics (product)
+## 10. Success metrics (product)
 
 - Repeat logging (e.g. streak maintenance).
 - Logs per active user per week.
 - Retention proxies (return sessions).
+- Queue drain reliability (pending op age / sync success rate).
 
-## 10. Risks
+## 11. Risks
 
 - Users may stop logging; streak and light copy reinforce habit.
 - Over-complex UI; keep primary flows short.
-- Privacy: local data; messaging on Profile and export.
+- Connectivity failures can delay server consistency; queue visibility and retry reduce impact.
+- Privacy: auth + synced data implies backend data handling requirements in addition to local messaging.

@@ -10,6 +10,7 @@ import { API_BASE_URL } from '../api.js';
 
 const RegisterScreen = () => {
     const [username, setUsername] = useState('');
+    const [uniqueCodeDigits, setUniqueCodeDigits] = useState('');
     const [password, setPassword] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -60,6 +61,15 @@ const RegisterScreen = () => {
             setError('Username is required');
             return false;
         }
+        const normalizedDigits = uniqueCodeDigits.trim();
+        if (!normalizedDigits) {
+            setError('Unique code number is required');
+            return false;
+        }
+        if (!/^[0-9]{4}$/.test(normalizedDigits)) {
+            setError('Unique code number must be 4 digits');
+            return false;
+        }
         if (!password) {
             setError('Password is required');
             return false;
@@ -80,8 +90,12 @@ const RegisterScreen = () => {
             setIsLoading(true);
             setError('');
 
+            const normalizedUsername = username.trim().toLowerCase();
+            const fullUniqueCode = `${normalizedUsername}#${uniqueCodeDigits.trim()}`;
+
             const response = await axios.post(`${API_BASE_URL}/api/v1/user/register`, {
-                username: username.trim(),
+                username: normalizedUsername,
+                uniqueCode: fullUniqueCode,
                 password: password
             });
 
@@ -170,6 +184,31 @@ const RegisterScreen = () => {
                         </View>
 
                         <View style={styles.inputGroup}>
+                            <Text style={styles.inputLabel}>Unique code</Text>
+                            <View style={styles.inputContainer}>
+                                <Feather name="hash" size={20} color="#4f46e5" style={styles.icon} />
+                                <Text style={styles.codePrefix}>
+                                    {(username.trim().toLowerCase() || 'username') + '#'}
+                                </Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="4821"
+                                    placeholderTextColor="#9ca3af"
+                                    value={uniqueCodeDigits}
+                                    onChangeText={(text) => {
+                                        const digitsOnly = String(text || '').replace(/[^0-9]/g, '').slice(0, 4);
+                                        setUniqueCodeDigits(digitsOnly);
+                                        setError('');
+                                    }}
+                                    keyboardType="number-pad"
+                                    autoCapitalize="none"
+                                    onBlur={() => Keyboard.dismiss()}
+                                />
+                            </View>
+                            <Text style={styles.helperText}>Username is fixed, enter only 4 digits</Text>
+                        </View>
+
+                        <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Password</Text>
                             <View style={styles.inputContainer}>
                                 <Feather name="lock" size={20} color="#4f46e5" style={styles.icon} />
@@ -201,13 +240,13 @@ const RegisterScreen = () => {
                         {error ? <Text style={styles.error}>{error}</Text> : null}
 
                         <TouchableOpacity
-                            style={[styles.button, (isLoading || !username.trim() || !password) && styles.buttonDisabled]}
+                            style={[styles.button, (isLoading || !username.trim() || uniqueCodeDigits.trim().length !== 4 || !password) && styles.buttonDisabled]}
                             onPress={handleRegister}
-                            disabled={isLoading || !username.trim() || !password}
+                            disabled={isLoading || !username.trim() || uniqueCodeDigits.trim().length !== 4 || !password}
                             activeOpacity={0.8}
                         >
                             <LinearGradient
-                                colors={(isLoading || !username.trim() || !password) ? ['#9ca3af', '#6b7280'] : ['#111827', '#1f2937']}
+                                colors={(isLoading || !username.trim() || uniqueCodeDigits.trim().length !== 4 || !password) ? ['#9ca3af', '#6b7280'] : ['#111827', '#1f2937']}
                                 style={styles.buttonGradient}
                             >
                                 <View style={styles.buttonContent}>
@@ -383,6 +422,18 @@ const styles = StyleSheet.create({
     },
     eyeIcon: {
         padding: 8,
+    },
+    helperText: {
+        marginTop: 6,
+        marginLeft: 6,
+        fontSize: 12,
+        color: '#6b7280',
+    },
+    codePrefix: {
+        fontSize: 16,
+        color: '#374151',
+        fontWeight: '600',
+        marginRight: 8,
     },
     welcomeOverlay: {
         position: 'absolute',

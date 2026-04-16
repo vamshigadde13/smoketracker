@@ -5,6 +5,10 @@ const normalizeEntry = (entry) => ({
   brand: String(entry?.brand || ""),
   quantity: Number(entry?.quantity) || 1,
   timestamp: entry?.timestamp ? new Date(entry.timestamp).getTime() : Date.now(),
+  shareToCircle: Boolean(entry?.shareToCircle),
+  shareCircleIds: Array.isArray(entry?.shareCircleIds) ? entry.shareCircleIds.map(String) : [],
+  shareFriendIds: Array.isArray(entry?.shareFriendIds) ? entry.shareFriendIds.map(String) : [],
+  ...(entry?.circleId ? { circleId: String(entry.circleId) } : {}),
   ...(entry?.cost === null || entry?.cost === undefined ? {} : { cost: Number(entry.cost) }),
 });
 
@@ -21,6 +25,10 @@ export const createEntryApi = async (payload) => {
       quantity: payload.quantity,
       timestamp: payload.timestamp,
       cost: payload.cost,
+      shareToCircle: Boolean(payload.shareToCircle),
+      shareCircleIds: Array.isArray(payload.shareCircleIds) ? payload.shareCircleIds : [],
+      shareFriendIds: Array.isArray(payload.shareFriendIds) ? payload.shareFriendIds : [],
+      ...(payload.circleId ? { circleId: payload.circleId } : {}),
     },
   });
   return normalizeEntry(data?.entry || {});
@@ -34,6 +42,10 @@ export const updateEntryApi = async (payload) => {
       quantity: payload.quantity,
       timestamp: payload.timestamp,
       cost: payload.cost,
+      ...(payload.shareToCircle === undefined ? {} : { shareToCircle: Boolean(payload.shareToCircle) }),
+      ...(payload.shareCircleIds === undefined ? {} : { shareCircleIds: Array.isArray(payload.shareCircleIds) ? payload.shareCircleIds : [] }),
+      ...(payload.shareFriendIds === undefined ? {} : { shareFriendIds: Array.isArray(payload.shareFriendIds) ? payload.shareFriendIds : [] }),
+      ...(payload.circleId ? { circleId: payload.circleId } : {}),
     },
   });
   return normalizeEntry(data?.entry || {});

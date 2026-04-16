@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Modal, Pressable, Text, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -10,15 +10,21 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { JournalScreen } from "./src/screens/JournalScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { PresetsScreen } from "./src/screens/PresetsScreen";
+import { FriendsScreen } from "./src/screens/FriendsScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import RegisterScreen from "./src/screens/RegisterScreen";
 import { AddEntryModal } from "./src/components/AddEntryModal";
 import {
   addPreset,
+  addFriendByCode,
   addSmokeEntry,
+  acceptFriendRequest,
+  createCircle,
   deletePreset,
   deleteSmokeEntry,
   getBrands,
+  getCircles,
+  getFriendsData,
   getNotificationSettings,
   getPresets,
   getProfile,
@@ -27,13 +33,17 @@ import {
   saveProfile,
   updatePreset,
   updateSmokeEntry,
+  rejectFriendRequest,
+  setCircleLiveNotifications,
   flushSyncQueue,
   getSyncStatus,
 } from "./src/services/storage";
 import { getLoggedInUserProfile } from "./src/services/authProfile";
 import {
+  disableDevicePushTokenAsync,
   getNotificationPermissionStatusAsync,
   requestNotificationPermissionAsync,
+  syncDevicePushTokenAsync,
   syncNotificationSchedulesAsync,
 } from "./src/services/notifications";
 
@@ -50,6 +60,21 @@ function AppContent() {
   const [modalVisible, setModalVisible] = useState(false);
   const [presetsVisible, setPresetsVisible] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [friends, setFriends] = useState([]);
+  const [pendingFriends, setPendingFriends] = useState([]);
+  const [circles, setCircles] = useState([]);
+  const [authUserProfile, setAuthUserProfile] = useState(null);
+  const actionLocksRef = useRef(new Set());
+
+  const runLocked = useCallback(async (key, action) => {
+    if (actionLocksRef.current.has(key)) return;
+    actionLocksRef.current.add(key);
+    try {
+      await action();
+    } finally {
+      actionLocksRef.current.delete(key);
+    }
+  }, []);
 
   const refreshData = async ({ withQueueFlush = true } = {}) => {
     if (!isAuthenticated) {
@@ -68,13 +93,15 @@ function AppContent() {
       await flushSyncQueue();
     }
 
-    const [allEntries, allBrands, allPresets, userProfile, notif, authUser] = await Promise.all([
+    const [allEntries, allBrands, allPresets, userProfile, notif, authUser, friendsData, allCircles] = await Promise.all([
       getSmokeEntries(),
       getBrands(),
       getPresets(),
       getProfile(),
       getNotificationSettings(),
       getLoggedInUserProfile(),
+      getFriendsData(),
+      getCircles(),
     ]);
     const mergedProfile =
       authUser?.name && authUser.name !== userProfile.name
@@ -91,7 +118,12 @@ function AppContent() {
     setBrands(allBrands);
     setPresets(allPresets);
     setProfile(mergedProfile);
+    setAuthUserProfile(authUser);
+    setFriends(friendsData.friends || []);
+    setPendingFriends(friendsData.pending || []);
+    setCircles(allCircles || []);
     setNotificationSettings(notif);
+    await syncDevicePushTokenAsync({ permissionStatus: notificationPermissionStatus });
     setSyncStatus(await getSyncStatus());
   };
 
@@ -112,6 +144,11 @@ function AppContent() {
   useEffect(() => {
     (async () => setNotificationPermissionStatus(await getNotificationPermissionStatusAsync()))();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void syncDevicePushTokenAsync({ permissionStatus: notificationPermissionStatus });
+  }, [isAuthenticated, notificationPermissionStatus]);
 
   useEffect(() => {
     if (!notificationSettings || notificationSettings.permissionAsked) return;
@@ -142,33 +179,47 @@ function AppContent() {
   );
 
   const handleAddEntry = async (payload) => {
-    await addSmokeEntry(payload);
-    await refreshData();
-    setModalVisible(false);
+    await runLocked("entries:create", async () => {
+      await addSmokeEntry(payload);
+      await refreshData();
+      setModalVisible(false);
+    });
   };
   const handleQuickLog = async ({ brand, quantity = 1, cost }) => {
-    await addSmokeEntry({ brand, quantity, timestamp: Date.now(), cost });
-    await refreshData();
+    await runLocked("entries:quicklog", async () => {
+      await addSmokeEntry({ brand, quantity, timestamp: Date.now(), cost });
+      await refreshData();
+    });
   };
   const handleCreatePreset = async (payload) => {
-    await addPreset(payload);
-    await refreshData();
+    await runLocked("presets:create", async () => {
+      await addPreset(payload);
+      await refreshData();
+    });
   };
   const handleUpdatePreset = async (payload) => {
-    await updatePreset(payload);
-    await refreshData();
+    await runLocked(`presets:update:${payload.id}`, async () => {
+      await updatePreset(payload);
+      await refreshData();
+    });
   };
   const handleDeletePreset = async (id) => {
-    await deletePreset(id);
-    await refreshData();
+    await runLocked(`presets:delete:${id}`, async () => {
+      await deletePreset(id);
+      await refreshData();
+    });
   };
   const handleDeleteEntry = async (id) => {
-    await deleteSmokeEntry(id);
-    await refreshData();
+    await runLocked(`entries:delete:${id}`, async () => {
+      await deleteSmokeEntry(id);
+      await refreshData();
+    });
   };
   const handleUpdateEntry = async (payload) => {
-    await updateSmokeEntry(payload);
-    await refreshData();
+    await runLocked(`entries:update:${payload.id}`, async () => {
+      await updateSmokeEntry(payload);
+      await refreshData();
+    });
   };
   const handleUpdateNotificationSettings = async (partial) => {
     const base = notificationSettings || (await getNotificationSettings());
@@ -176,7 +227,9 @@ function AppContent() {
     setNotificationSettings(next);
   };
   const handleRequestNotificationPermission = async () => {
-    setNotificationPermissionStatus(await requestNotificationPermissionAsync());
+    await runLocked("notifications:permission", async () => {
+      setNotificationPermissionStatus(await requestNotificationPermissionAsync());
+    });
   };
 
   return (
@@ -205,6 +258,7 @@ function AppContent() {
                   const iconMap = {
                     Home: focused ? "home" : "home-outline",
                     Journal: focused ? "book" : "book-outline",
+                    Friends: focused ? "people" : "people-outline",
                     Profile: focused ? "person" : "person-outline",
                   };
                   return <Ionicons name={iconMap[route.name] || "ellipse-outline"} size={size} color={color} />;
@@ -234,11 +288,45 @@ function AppContent() {
                   />
                 )}
               </Tab.Screen>
+              <Tab.Screen name="Friends">
+                {() => (
+                  <FriendsScreen
+                    uniqueCode={authUserProfile?.uniqueCode}
+                    friends={friends}
+                    pending={pendingFriends}
+                    circles={circles}
+                    onAddByCode={async (code) => runLocked(`friends:add:${code}`, async () => {
+                      await addFriendByCode(code);
+                      await refreshData();
+                    })}
+                    onAccept={async (requestId) => runLocked(`friends:accept:${requestId}`, async () => {
+                      await acceptFriendRequest(requestId);
+                      await refreshData();
+                    })}
+                    onReject={async (requestId) => runLocked(`friends:reject:${requestId}`, async () => {
+                      await rejectFriendRequest(requestId);
+                      await refreshData();
+                    })}
+                    onCreateCircle={async (payload) => runLocked(`circles:create:${payload.name}`, async () => {
+                      await createCircle(payload);
+                      await refreshData();
+                    })}
+                    onToggleLiveNotifications={async (payload) => runLocked(`circles:settings:${payload.circleId}`, async () => {
+                      await setCircleLiveNotifications(payload);
+                      await refreshData();
+                    })}
+                    onRefresh={refreshData}
+                  />
+                )}
+              </Tab.Screen>
               <Tab.Screen name="Profile">
                 {() => (
                   <ProfileScreen
+                    username={authUserProfile?.username || ""}
+                    uniqueCode={authUserProfile?.uniqueCode || ""}
                     onProfileSaved={refreshData}
                     onLoggedOut={async () => {
+                      await disableDevicePushTokenAsync();
                       await logout();
                       await refreshData();
                     }}
@@ -260,6 +348,8 @@ function AppContent() {
               visible={modalVisible}
               brands={brands}
               presets={presets}
+              circles={circles}
+              friends={friends}
               onOpenPresets={() => {
                 setModalVisible(false);
                 setPresetsVisible(true);

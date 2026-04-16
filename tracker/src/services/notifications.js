@@ -1,9 +1,21 @@
 import Constants from "expo-constants";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { STORAGE_KEYS } from "../constants/storageKeys";
+import { disablePushTokenApi, upsertPushTokenApi } from "./api/pushTokenApi";
 
 const DAILY_KIND = "daily_checkin";
 const NUDGE_KIND = "no_log_nudge";
 const isExpoGo = Constants.appOwnership === "expo";
 const getNotificationsModule = async () => (isExpoGo ? null : await import("expo-notifications"));
+const getDevicePushTokenState = async () => String((await AsyncStorage.getItem(STORAGE_KEYS.LAST_PUSH_TOKEN)) || "").trim();
+const setDevicePushTokenState = async (token) => {
+  if (!token) {
+    await AsyncStorage.removeItem(STORAGE_KEYS.LAST_PUSH_TOKEN);
+    return;
+  }
+  await AsyncStorage.setItem(STORAGE_KEYS.LAST_PUSH_TOKEN, token);
+};
 
 const isTodayLocal = (ts) => {
   const d = new Date(ts);
@@ -44,6 +56,32 @@ export const requestNotificationPermissionAsync = async () => {
   return (await Notifications.requestPermissionsAsync()).status;
 };
 
+export const syncDevicePushTokenAsync = async ({ permissionStatus }) => {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications || permissionStatus !== "granted") return null;
+  if (Platform.OS !== "android") return null;
+  const tokenResult = await Notifications.getExpoPushTokenAsync();
+  const expoPushToken = String(tokenResult?.data || "").trim();
+  if (!expoPushToken) return null;
+
+  const previousToken = await getDevicePushTokenState();
+  if (previousToken === expoPushToken) return expoPushToken;
+
+  await upsertPushTokenApi({ expoPushToken, platform: "android" });
+  await setDevicePushTokenState(expoPushToken);
+  return expoPushToken;
+};
+
+export const disableDevicePushTokenAsync = async () => {
+  const token = await getDevicePushTokenState();
+  if (!token) return;
+  try {
+    await disablePushTokenApi({ expoPushToken: token });
+  } finally {
+    await setDevicePushTokenState("");
+  }
+};
+
 const cancelTaggedNotificationsAsync = async (kind) => {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return;
@@ -65,7 +103,9 @@ const scheduleNoLogNudgeAsync = async (settings, entries) => {
   if (!Notifications) return null;
   if (entries.some((e) => isTodayLocal(e.timestamp))) return null;
   const candidate = todayAt(settings.dailyTime);
-  if (candidate <= new Date() || isWithinQuietHours(candidate, settings)) return null;
+  const now = new Date();
+  if (candidate <= now) return null;
+  if (isWithinQuietHours(candidate, settings)) return null;
   return Notifications.scheduleNotificationAsync({
     content: {
       title: "Smoke Tracker",
