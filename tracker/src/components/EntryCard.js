@@ -13,6 +13,11 @@ export function EntryCard({ entry, onEdit, onDelete }) {
       <Text className="mt-1 text-xs text-gray-500">
         Cost: {entry.cost != null ? formatMoney(entry.cost) : "—"}
       </Text>
+      {entry.trigger ? (
+        <Text className="mt-1 text-xs font-semibold text-indigo-700">
+          Trigger: {String(entry.trigger).replace("_", " ")}
+        </Text>
+      ) : null}
       <View className="mt-3 flex-row">
         <Pressable onPress={() => onEdit?.(entry)} className="mr-2 flex-row items-center rounded-lg bg-gray-100 px-3 py-2">
           <Ionicons name="create-outline" size={14} color="#374151" />

@@ -3,6 +3,7 @@ import { apiRequest } from "./client";
 const normalizePreset = (preset) => ({
   id: String(preset?._id || preset?.id || ""),
   brand: String(preset?.brand || ""),
+  ...(String(preset?.shortName || "").trim() ? { shortName: String(preset.shortName).trim() } : {}),
   quantity: Number(preset?.quantity) || 1,
   ...(preset?.costPerSmoke === null || preset?.costPerSmoke === undefined ? {} : { costPerSmoke: Number(preset.costPerSmoke) }),
 });

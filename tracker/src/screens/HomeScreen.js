@@ -3,24 +3,41 @@ import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { StreakBadge } from "../components/StreakBadge";
-import { getAnalyticsSummary } from "../services/analytics";
+import { getAnalyticsSummary, getGoalProgress } from "../services/analytics";
 import { computeLoggingHighlights, computeLoggingStreak, formatDayKeyShort, formatTime, isYesterday } from "../utils/date";
 import { formatMoney, normalizeCost } from "../utils/money";
 
 const qty = (e) => Number(e.quantity) || 0;
 
-export function HomeScreen({ entries, presets, profile, onOpenAddModal, onQuickLog, onRefresh }) {
+export function HomeScreen({ entries, presets, profile, goals, onOpenAddModal, onQuickLog, onRefresh }) {
   const { todayTotal, todayLogCount, todaySpend, weekTotal, allTimeSpend } = getAnalyticsSummary(entries);
   const greetName = profile?.alias?.trim() || profile?.name?.trim() || null;
   const totalLogged = entries.reduce((s, e) => s + qty(e), 0);
   const latestEntry = entries[0];
   const yesterdayTotal = entries.filter((e) => isYesterday(e.timestamp)).reduce((s, e) => s + qty(e), 0);
   const delta = todayTotal - yesterdayTotal;
-  const topPresets = presets.slice(0, 4);
+  const topPresets = useMemo(() => {
+    const usageByBrand = entries.reduce((map, entry) => {
+      const key = String(entry.brand || "").trim().toLowerCase();
+      if (!key) return map;
+      const current = map.get(key) || { logs: 0, smokes: 0 };
+      current.logs += 1;
+      current.smokes += qty(entry);
+      map.set(key, current);
+      return map;
+    }, new Map());
+
+    return presets
+      .map((preset, index) => {
+        const key = String(preset.brand || "").trim().toLowerCase();
+        const usage = usageByBrand.get(key) || { logs: 0, smokes: 0 };
+        return { preset, index, logs: usage.logs, smokes: usage.smokes };
+      })
+      .sort((a, b) => b.smokes - a.smokes || b.logs - a.logs || a.index - b.index)
+      .slice(0, 4)
+      .map((item) => item.preset);
+  }, [presets, entries]);
   const recentEntries = entries.slice(0, 5);
-  const recentBrands = Array.from(
-    new Set(entries.map((e) => String(e.brand || "").trim()).filter(Boolean))
-  ).slice(0, 5);
   const streak = useMemo(() => computeLoggingStreak(entries), [entries]);
   const highlights = useMemo(() => computeLoggingHighlights(entries), [entries]);
   const [refreshing, setRefreshing] = useState(false);
@@ -30,6 +47,7 @@ export function HomeScreen({ entries, presets, profile, onOpenAddModal, onQuickL
     try { await onRefresh(); } finally { setRefreshing(false); }
   }, [onRefresh]);
   const todaySubline = todayTotal === 0 && yesterdayTotal === 0 ? "No logs yet today or yesterday" : delta === 0 ? "Same smoke total as yesterday" : `${Math.abs(delta)} smokes ${delta > 0 ? "above" : "below"} yesterday`;
+  const goalProgress = useMemo(() => getGoalProgress({ entries, goals }), [entries, goals]);
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-gray-50">
@@ -56,7 +74,32 @@ export function HomeScreen({ entries, presets, profile, onOpenAddModal, onQuickL
               {todaySpend > 0 ? <Text className="mt-2 text-sm font-semibold text-emerald-800">{formatMoney(todaySpend)} today</Text> : null}
             </View>
           </View>
-          <View className="mt-4 border-t border-gray-100 pt-3"><Text className="text-xs font-semibold uppercase tracking-wide text-gray-400">This week</Text><Text className="mt-0.5 text-sm font-medium text-gray-800">{weekTotal} smokes (Sun–today)</Text></View>
+          <View className="mt-4 border-t border-gray-100 pt-3">
+            <Text className="text-xs font-semibold uppercase tracking-wide text-gray-400">This week</Text>
+            <Text className="mt-0.5 text-sm font-medium text-gray-800">{weekTotal} smokes (Sun–today)</Text>
+            {(goalProgress.dailyLimit > 0 || goalProgress.weeklyLimit > 0) ? (
+              <View className="mt-3 flex-row">
+                <View className="mr-2 flex-1 rounded-lg bg-gray-50 p-2.5">
+                  <Text className="text-[11px] uppercase tracking-wide text-gray-500">Daily goal</Text>
+                  <Text className="mt-0.5 text-sm font-bold text-gray-900">
+                    {goalProgress.dailyUsed}/{goalProgress.dailyLimit || "-"}
+                  </Text>
+                  <Text className={`text-[11px] font-semibold ${goalProgress.dailyWithin ? "text-emerald-700" : "text-rose-700"}`}>
+                    {goalProgress.dailyWithin ? "Within" : "Over"}
+                  </Text>
+                </View>
+                <View className="ml-2 flex-1 rounded-lg bg-gray-50 p-2.5">
+                  <Text className="text-[11px] uppercase tracking-wide text-gray-500">Weekly goal</Text>
+                  <Text className="mt-0.5 text-sm font-bold text-gray-900">
+                    {goalProgress.weeklyUsed}/{goalProgress.weeklyLimit || "-"}
+                  </Text>
+                  <Text className={`text-[11px] font-semibold ${goalProgress.weeklyWithin ? "text-emerald-700" : "text-rose-700"}`}>
+                    {goalProgress.weeklyWithin ? "Within" : "Over"}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         <Pressable onPress={onOpenAddModal} className="mb-4 flex-row items-center justify-center rounded-2xl bg-gray-900 py-4 active:bg-gray-800"><Ionicons name="add-circle-outline" size={22} color="#fff" /><Text className="ml-2 text-lg font-semibold text-white">Log smoke</Text></Pressable>
@@ -70,34 +113,11 @@ export function HomeScreen({ entries, presets, profile, onOpenAddModal, onQuickL
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {topPresets.map((preset) => (
                 <Pressable key={preset.id} className="mr-2 rounded-2xl bg-gray-900 px-4 py-3 active:bg-gray-800" onPress={() => { const u = normalizeCost(preset.costPerSmoke); const cost = u !== undefined ? Math.round(u * preset.quantity * 100) / 100 : undefined; onQuickLog({ brand: preset.brand, quantity: preset.quantity, cost }); }}>
-                  <Text className="text-center text-sm font-semibold text-white">{preset.brand}</Text>
+                  <Text className="text-center text-sm font-semibold text-white">{preset.shortName || preset.brand}</Text>
                   <Text className="mt-0.5 text-center text-xs text-gray-300">{preset.quantity} {preset.quantity === 1 ? "smoke" : "smokes"}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
-        ) : null}
-
-        {recentBrands.length > 0 ? (
-          <View className="mb-4 rounded-2xl bg-white p-5 shadow-sm">
-            <View className="mb-1 flex-row items-center">
-              <Ionicons name="pricetag-outline" size={16} color="#6b7280" />
-              <Text className="ml-2 text-base font-semibold text-gray-900">Recent brands</Text>
-            </View>
-            <Text className="mb-3 text-xs text-gray-500">
-              Tap to log 1 smoke quickly.
-            </Text>
-            <View className="flex-row flex-wrap">
-              {recentBrands.map((brand) => (
-                <Pressable
-                  key={brand}
-                  onPress={() => onQuickLog({ brand, quantity: 1 })}
-                  className="mb-2 mr-2 rounded-full border border-gray-300 bg-white px-3 py-2"
-                >
-                  <Text className="text-xs font-semibold text-gray-700">{brand}</Text>
-                </Pressable>
-              ))}
-            </View>
           </View>
         ) : null}
 

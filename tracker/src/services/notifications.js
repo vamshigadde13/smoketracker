@@ -3,9 +3,12 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { disablePushTokenApi, upsertPushTokenApi } from "./api/pushTokenApi";
+import { getTypicalSmokingHour } from "./analytics";
 
 const DAILY_KIND = "daily_checkin";
 const NUDGE_KIND = "no_log_nudge";
+const SMART_NUDGE_KIND = "smart_nudge";
+const WEEKLY_SUMMARY_KIND = "weekly_summary";
 const isExpoGo = Constants.appOwnership === "expo";
 const getNotificationsModule = async () => (isExpoGo ? null : await import("expo-notifications"));
 const getDevicePushTokenState = async () => String((await AsyncStorage.getItem(STORAGE_KEYS.LAST_PUSH_TOKEN)) || "").trim();
@@ -115,12 +118,83 @@ const scheduleNoLogNudgeAsync = async (settings, entries) => {
     trigger: candidate,
   });
 };
+const scheduleSmartNudgeAsync = async (settings, entries) => {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return null;
+  if (entries.some((e) => isTodayLocal(e.timestamp))) return null;
+  const peakHour = getTypicalSmokingHour(entries);
+  if (peakHour == null) return null;
+  const hour = Math.max(0, Math.min(23, peakHour));
+  const minute = 30;
+  const candidate = todayAt({ hour, minute });
+  const now = new Date();
+  if (candidate <= now) return null;
+  if (isWithinQuietHours(candidate, settings)) return null;
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Smoke Tracker",
+      body: "You are near your usual smoking window. Pause and decide intentionally.",
+      data: { kind: SMART_NUDGE_KIND },
+    },
+    trigger: candidate,
+  });
+};
+
+const scheduleWeeklySummaryAsync = async (settings, entries) => {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return null;
+  const now = new Date();
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(now.getDate() - now.getDay());
+  thisWeekStart.setHours(0, 0, 0, 0);
+  const previousWeekStart = new Date(thisWeekStart);
+  previousWeekStart.setDate(thisWeekStart.getDate() - 7);
+  const thisWeekEntries = entries.filter((e) => e.timestamp >= thisWeekStart.getTime());
+  const previousWeekEntries = entries.filter(
+    (e) => e.timestamp >= previousWeekStart.getTime() && e.timestamp < thisWeekStart.getTime()
+  );
+  const thisWeekCount = thisWeekEntries.length;
+  const thisWeekSmokes = thisWeekEntries.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
+  const previousWeekSmokes = previousWeekEntries.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
+  const trendText =
+    previousWeekSmokes === 0
+      ? "Keep building your baseline."
+      : thisWeekSmokes <= previousWeekSmokes
+        ? `Down ${Math.max(0, previousWeekSmokes - thisWeekSmokes)} smokes vs last week.`
+        : `Up ${Math.max(0, thisWeekSmokes - previousWeekSmokes)} smokes vs last week.`;
+  const weekday = 1;
+  const triggerHour = settings.dailyTime.hour;
+  const triggerMinute = settings.dailyTime.minute;
+  const weeklyCandidate = new Date(now);
+  const daysUntilTarget = (weekday - now.getDay() + 7) % 7;
+  weeklyCandidate.setDate(now.getDate() + daysUntilTarget);
+  weeklyCandidate.setHours(triggerHour, triggerMinute, 0, 0);
+  if (weeklyCandidate <= now) weeklyCandidate.setDate(weeklyCandidate.getDate() + 7);
+  if (isWithinQuietHours(weeklyCandidate, settings)) return null;
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Smoke Tracker weekly summary",
+      body: `${thisWeekSmokes} smokes in ${thisWeekCount} logs this week. ${trendText}`,
+      data: { kind: WEEKLY_SUMMARY_KIND },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday,
+      hour: triggerHour,
+      minute: triggerMinute,
+    },
+  });
+};
 
 export const syncNotificationSchedulesAsync = async ({ settings, entries, permissionStatus }) => {
   await cancelTaggedNotificationsAsync(DAILY_KIND);
   await cancelTaggedNotificationsAsync(NUDGE_KIND);
+  await cancelTaggedNotificationsAsync(SMART_NUDGE_KIND);
+  await cancelTaggedNotificationsAsync(WEEKLY_SUMMARY_KIND);
   if (permissionStatus !== "granted") return;
   await registerNotificationChannelAsync();
   if (settings.enabledDailyCheckin) await scheduleDailyCheckinAsync(settings);
   if (settings.enabledNoLogNudge) await scheduleNoLogNudgeAsync(settings, entries);
+  if (settings.enabledSmartNudges) await scheduleSmartNudgeAsync(settings, entries);
+  if (settings.enabledWeeklySummary) await scheduleWeeklySummaryAsync(settings, entries);
 };

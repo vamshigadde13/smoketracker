@@ -227,3 +227,51 @@ export const getAnalyticsSummary = (entries) => {
   };
 };
 
+export const getGoalProgress = ({ entries, goals }) => {
+  const dailyLimit = Math.max(0, Number(goals?.dailyLimit) || 0);
+  const weeklyLimit = Math.max(0, Number(goals?.weeklyLimit) || 0);
+  const summary = getAnalyticsSummary(entries);
+  const dailyUsed = summary.todayTotal;
+  const weeklyUsed = summary.weekTotal;
+  const dailyRemaining = dailyLimit > 0 ? dailyLimit - dailyUsed : null;
+  const weeklyRemaining = weeklyLimit > 0 ? weeklyLimit - weeklyUsed : null;
+  return {
+    dailyLimit,
+    weeklyLimit,
+    dailyUsed,
+    weeklyUsed,
+    dailyRemaining,
+    weeklyRemaining,
+    dailyWithin: dailyLimit > 0 ? dailyUsed <= dailyLimit : true,
+    weeklyWithin: weeklyLimit > 0 ? weeklyUsed <= weeklyLimit : true,
+  };
+};
+
+export const getTriggerInsights = (entries) => {
+  const triggerMap = entries.reduce((map, entry) => {
+    const trigger = String(entry.trigger || "").trim();
+    if (!trigger) return map;
+    map.set(trigger, (map.get(trigger) || 0) + qty(entry));
+    return map;
+  }, new Map());
+  const top = Array.from(triggerMap.entries())
+    .map(([trigger, smokes]) => ({ trigger, smokes }))
+    .sort((a, b) => b.smokes - a.smokes)
+    .slice(0, 5);
+  return {
+    totalTaggedLogs: entries.filter((entry) => String(entry.trigger || "").trim()).length,
+    top,
+  };
+};
+
+export const getTypicalSmokingHour = (entries) => {
+  if (!entries.length) return null;
+  const hourMap = entries.reduce((acc, entry) => {
+    const h = new Date(entry.timestamp).getHours();
+    acc[h] = (acc[h] || 0) + qty(entry);
+    return acc;
+  }, {});
+  const [peakHourRaw] = Object.entries(hourMap).sort((a, b) => b[1] - a[1])[0] || [];
+  return peakHourRaw == null ? null : Number(peakHourRaw);
+};
+

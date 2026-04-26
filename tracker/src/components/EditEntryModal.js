@@ -8,6 +8,8 @@ export function EditEntryModal({ visible, entry, brands, onClose, onSave }) {
   const [costStr, setCostStr] = useState("");
   const [timestamp, setTimestamp] = useState(Date.now());
   const [saving, setSaving] = useState(false);
+  const [trigger, setTrigger] = useState("");
+  const triggerOptions = ["stress", "after_meal", "social", "boredom", "work_break", "commute"];
 
   useEffect(() => {
     if (!visible || !entry) return;
@@ -15,6 +17,7 @@ export function EditEntryModal({ visible, entry, brands, onClose, onSave }) {
     setQuantity(Math.max(1, Number(entry.quantity) || 1));
     setCostStr(entry.cost != null ? String(entry.cost) : "");
     setTimestamp(Number(entry.timestamp) || Date.now());
+    setTrigger(String(entry.trigger || ""));
     setSaving(false);
   }, [visible, entry]);
 
@@ -24,7 +27,7 @@ export function EditEntryModal({ visible, entry, brands, onClose, onSave }) {
     if (!entry || saving || !brand.trim()) return;
     setSaving(true);
     try {
-      await onSave({ id: entry.id, brand, quantity, cost: costStr, timestamp });
+      await onSave({ id: entry.id, brand, quantity, cost: costStr, timestamp, trigger });
     } finally {
       setSaving(false);
     }
@@ -52,7 +55,7 @@ export function EditEntryModal({ visible, entry, brands, onClose, onSave }) {
             <Text className="mx-4 text-lg font-semibold text-gray-900">{quantity}</Text>
             <Pressable onPress={() => setQuantity((p) => p + 1)} className="rounded-lg border border-gray-300 px-4 py-2"><Text className="text-lg">+</Text></Pressable>
           </View>
-          <Text className="mb-1 text-sm font-medium text-gray-600">Cost for this log (rupees, optional)</Text>
+          <Text className="mb-1 text-sm font-medium text-gray-600">Cost for this log (rupees)</Text>
           <TextInput value={costStr} onChangeText={setCostStr} placeholder="e.g. 50" keyboardType="decimal-pad" className="mb-4 rounded-xl border border-gray-200 px-3 py-3" />
           <Text className="mb-1 text-sm font-medium text-gray-600">Time</Text>
           <View className="mb-5 rounded-xl border border-gray-200 px-3 py-3">
@@ -61,6 +64,23 @@ export function EditEntryModal({ visible, entry, brands, onClose, onSave }) {
               <Text className="text-sm font-semibold text-gray-900">Use current time</Text>
             </Pressable>
           </View>
+          <Text className="mb-1 text-sm font-medium text-gray-600">Trigger (optional)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+            {triggerOptions.map((item) => {
+              const active = trigger === item;
+              return (
+                <Pressable
+                  key={item}
+                  className={`mr-2 rounded-full border px-3 py-2 ${active ? "border-gray-900 bg-gray-900" : "border-gray-300 bg-white"}`}
+                  onPress={() => setTrigger((prev) => (prev === item ? "" : item))}
+                >
+                  <Text className={`text-xs font-semibold ${active ? "text-white" : "text-gray-700"}`}>
+                    {item.replace("_", " ")}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
           <View className="flex-row gap-3">
             <Pressable className="flex-1 rounded-xl bg-gray-100 py-3" onPress={onClose} disabled={saving}><Text className="text-center font-semibold text-gray-700">Cancel</Text></Pressable>
             <Pressable className={`flex-1 rounded-xl py-3 ${saving ? "bg-gray-700" : "bg-gray-900"}`} onPress={handleSubmit} disabled={saving}><Text className="text-center font-semibold text-white">{saving ? "Saving..." : "Save changes"}</Text></Pressable>

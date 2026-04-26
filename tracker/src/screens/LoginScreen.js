@@ -1,7 +1,7 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform, Keyboard, Dimensions, Animated } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform, Keyboard, Dimensions, Animated, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -70,6 +70,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
     const [showWelcome, setShowWelcome] = useState(false);
     const [welcomeOpacity] = useState(new Animated.Value(0));
     const [isNewUser, setIsNewUser] = useState(false);
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [resetLoginId, setResetLoginId] = useState('');
+    const [resetPassword, setResetPassword] = useState('');
+    const [resetLoading, setResetLoading] = useState(false);
     const navigation = useNavigation();
     const route = useRoute();
 
@@ -233,6 +237,36 @@ const LoginScreen = ({ onLoginSuccess }) => {
         }
     };
 
+    const handleResetPassword = async () => {
+        if (!resetLoginId.trim()) {
+            Alert.alert('Missing info', 'Enter username or user ID.');
+            return;
+        }
+        if (!resetPassword || resetPassword.length < 6) {
+            Alert.alert('Invalid password', 'New password must be at least 6 characters.');
+            return;
+        }
+        try {
+            setResetLoading(true);
+            const response = await api.post('/api/v1/user/forgot-password', {
+                loginId: resetLoginId.trim(),
+                newPassword: resetPassword,
+            });
+            if (!response.data?.success) {
+                throw new Error(response.data?.message || 'Reset failed');
+            }
+            Alert.alert('Password reset', 'Password updated. Please login with your new password.');
+            setShowForgotPassword(false);
+            setResetLoginId('');
+            setResetPassword('');
+        } catch (err) {
+            const message = err?.response?.data?.message || err?.message || 'Unable to reset password';
+            Alert.alert('Reset failed', message);
+        } finally {
+            setResetLoading(false);
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container}>
 
@@ -240,7 +274,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
             {showWelcome && (
                 <Animated.View style={[styles.welcomeOverlay, { opacity: welcomeOpacity }]}>
                     <View style={styles.welcomeMessage}>
-                        <Ionicons name="checkmark-circle" size={48} color="#10b981" />
+                        <Ionicons name="checkmark-circle" size={48} color="#111827" />
                         <Text style={styles.welcomeText}>
                             {isNewUser ? "Welcome to PickleMatch!" : "Welcome Back!"}
                         </Text>
@@ -274,7 +308,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Username</Text>
                             <View style={styles.inputContainer}>
-                                <Feather name="user" size={20} color="#4f46e5" style={styles.icon} />
+                                <Feather name="user" size={20} color="#374151" style={styles.icon} />
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Enter your username"
@@ -293,7 +327,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Password</Text>
                             <View style={styles.inputContainer}>
-                                <Feather name="lock" size={20} color="#4f46e5" style={styles.icon} />
+                                <Feather name="lock" size={20} color="#374151" style={styles.icon} />
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Enter your password"
@@ -313,7 +347,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                                     <Feather
                                         name={isPasswordVisible ? 'eye' : 'eye-off'}
                                         size={20}
-                                        color="#4f46e5"
+                                        color="#374151"
                                     />
                                 </TouchableOpacity>
                             </View>
@@ -340,6 +374,14 @@ const LoginScreen = ({ onLoginSuccess }) => {
                             </LinearGradient>
                         </TouchableOpacity>
 
+                        <TouchableOpacity
+                            onPress={() => setShowForgotPassword(true)}
+                            activeOpacity={0.7}
+                            style={styles.forgotLinkWrap}
+                        >
+                            <Text style={styles.forgotLink}>Forgot password?</Text>
+                        </TouchableOpacity>
+
                         <View style={styles.linkContainer}>
                             <Text style={styles.linkText}>Don't have an account? </Text>
                             <TouchableOpacity onPress={() => {
@@ -353,6 +395,40 @@ const LoginScreen = ({ onLoginSuccess }) => {
                     </View>
                 </View>
             </KeyboardAvoidingView>
+
+            <Modal transparent animationType="fade" visible={showForgotPassword} onRequestClose={() => setShowForgotPassword(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Reset password</Text>
+                        <Text style={styles.modalSubtitle}>Use username or user ID, then set a new password.</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="Username or user ID"
+                            placeholderTextColor="#9ca3af"
+                            value={resetLoginId}
+                            onChangeText={setResetLoginId}
+                            autoCapitalize="none"
+                        />
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="New password"
+                            placeholderTextColor="#9ca3af"
+                            value={resetPassword}
+                            onChangeText={setResetPassword}
+                            secureTextEntry
+                            autoCapitalize="none"
+                        />
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowForgotPassword(false)} disabled={resetLoading}>
+                                <Text style={styles.modalCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.modalConfirmBtn} onPress={handleResetPassword} disabled={resetLoading}>
+                                <Text style={styles.modalConfirmText}>{resetLoading ? 'Resetting...' : 'Reset'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -392,7 +468,7 @@ const styles = StyleSheet.create({
     },
     badge: {
         marginBottom: 10,
-        backgroundColor: '#eef2ff',
+        backgroundColor: '#f3f4f6',
         borderRadius: 999,
         paddingHorizontal: 12,
         paddingVertical: 5,
@@ -400,7 +476,7 @@ const styles = StyleSheet.create({
     badgeText: {
         fontSize: 12,
         fontWeight: '700',
-        color: '#4338ca',
+        color: '#374151',
         letterSpacing: 0.4,
     },
     title: {
@@ -491,10 +567,20 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     link: {
-        color: '#4f46e5',
+        color: '#111827',
         fontWeight: 'bold',
         fontSize: 15,
         marginLeft: 4,
+    },
+    forgotLinkWrap: {
+        alignSelf: 'flex-end',
+        marginTop: -4,
+        marginBottom: 8,
+    },
+    forgotLink: {
+        color: '#111827',
+        fontSize: 13,
+        fontWeight: '600',
     },
     error: {
         color: '#ef4444',
@@ -546,6 +632,63 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#6b7280',
         textAlign: 'center',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+    },
+    modalCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 18,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#111827',
+    },
+    modalSubtitle: {
+        marginTop: 4,
+        marginBottom: 12,
+        color: '#6b7280',
+        fontSize: 13,
+    },
+    modalInput: {
+        borderWidth: 1,
+        borderColor: '#d1d5db',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 10,
+        color: '#111827',
+    },
+    modalActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginTop: 4,
+    },
+    modalCancelBtn: {
+        backgroundColor: '#f3f4f6',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        marginRight: 8,
+    },
+    modalCancelText: {
+        color: '#374151',
+        fontWeight: '600',
+    },
+    modalConfirmBtn: {
+        backgroundColor: '#111827',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    modalConfirmText: {
+        color: '#fff',
+        fontWeight: '700',
     },
 });
 

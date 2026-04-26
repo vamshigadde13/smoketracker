@@ -32,6 +32,7 @@ export async function shareSmokeTrackerSpreadsheet(payload) {
   const presetRows = (payload.presets || []).map((p) => ({
     id: p.id,
     brand: p.brand ?? "",
+    short_name: p.shortName ?? "",
     quantity: p.quantity ?? "",
     cost_per_smoke: p.costPerSmoke ?? "",
   }));
@@ -40,6 +41,7 @@ export async function shareSmokeTrackerSpreadsheet(payload) {
     sheetFromObjects(presetRows, {
       id: "",
       brand: "",
+      short_name: "",
       quantity: "",
       cost_per_smoke: "",
     }),
@@ -98,8 +100,8 @@ function buildFullDataCsv(payload) {
   for (const e of payload.entries || []) row([e.id, new Date(e.timestamp).toISOString(), e.brand, e.quantity, e.cost ?? ""]);
   lines.push("");
   row(["section", "PRESETS"]);
-  row(["id", "brand", "quantity", "cost_per_smoke"]);
-  for (const p of payload.presets || []) row([p.id, p.brand, p.quantity, p.costPerSmoke ?? ""]);
+  row(["id", "brand", "short_name", "quantity", "cost_per_smoke"]);
+  for (const p of payload.presets || []) row([p.id, p.brand, p.shortName ?? "", p.quantity, p.costPerSmoke ?? ""]);
   lines.push("");
   row(["section", "PROFILE"]);
   row(["name", "alias", "bio"]);

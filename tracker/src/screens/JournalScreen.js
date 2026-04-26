@@ -13,6 +13,7 @@ import { formatMoney } from "../utils/money";
 import {
   getAnalyticsSummary,
   getBrandCostInsights,
+  getTriggerInsights,
 } from "../services/analytics";
 
 const monthLabel = (year, month) =>
@@ -75,6 +76,17 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
   );
   const normalizedRangeStart = rangeStart && rangeEnd ? (rangeStart <= rangeEnd ? rangeStart : rangeEnd) : null;
   const normalizedRangeEnd = rangeStart && rangeEnd ? (rangeStart <= rangeEnd ? rangeEnd : rangeStart) : null;
+  const hasRangeSelection = Boolean(rangeStart || rangeEnd);
+  const hasCompletedRange = Boolean(normalizedRangeStart && normalizedRangeEnd);
+  const rangeSelectionLabel = !isRangeSelectionMode
+    ? hasCompletedRange
+      ? "Edit range"
+      : "Pick date range"
+    : !rangeStart
+      ? "Pick start date"
+      : rangeEnd
+        ? "Range selected"
+        : "Pick end date";
   const rangeDayCount =
     normalizedRangeStart && normalizedRangeEnd
       ? Math.floor((new Date(`${normalizedRangeEnd}T00:00:00`).getTime() - new Date(`${normalizedRangeStart}T00:00:00`).getTime()) / 86400000) + 1
@@ -117,6 +129,7 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
   const totalRangeSpend = insightsRangeEntries.reduce((sum, entry) => sum + (Number.isFinite(Number(entry.cost)) ? Number(entry.cost) : 0), 0);
   const brandCost = useMemo(() => getBrandCostInsights(insightsRangeEntries), [insightsRangeEntries]);
   const summary = getAnalyticsSummary(entries);
+  const triggerInsights = useMemo(() => getTriggerInsights(entries), [entries]);
   const rangeLabel = "Overall";
 
   return (
@@ -198,6 +211,7 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
                     setRangeEnd(null);
                   } else {
                     setRangeEnd(dayKey);
+                    setIsRangeSelectionMode(false);
                   }
                 }}
               />
@@ -214,36 +228,23 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
                       onPress={() => {
                         const next = !isRangeSelectionMode;
                         setIsRangeSelectionMode(next);
-                        if (!next) {
-                          setRangeStart(null);
-                          setRangeEnd(null);
-                        }
                       }}
                       className={`rounded-full px-3 py-1 ${isRangeSelectionMode ? "bg-sky-100" : "bg-gray-100"}`}
                     >
                       <Text className={`text-xs font-semibold ${isRangeSelectionMode ? "text-sky-700" : "text-gray-600"}`}>
-                        {isRangeSelectionMode ? "Selecting range" : "Select range"}
+                        {rangeSelectionLabel}
                       </Text>
                     </Pressable>
-                    {(rangeStart || rangeEnd) ? (
+                    {hasRangeSelection ? (
                       <Pressable
                         onPress={() => {
                           setRangeStart(null);
                           setRangeEnd(null);
-                        }}
-                        className="ml-2"
-                      >
-                        <Text className="text-xs font-semibold text-gray-500">Clear</Text>
-                      </Pressable>
-                    ) : null}
-                    {isRangeSelectionMode ? (
-                      <Pressable
-                        onPress={() => {
                           setIsRangeSelectionMode(false);
                         }}
                         className="ml-2"
                       >
-                        <Text className="text-xs font-semibold text-gray-500">Exit</Text>
+                        <Text className="text-xs font-semibold text-gray-500">Reset</Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -284,9 +285,11 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
                 ) : (
                   <Text className="text-sm text-gray-700">
                     {!isRangeSelectionMode
-                      ? "Tap 'Select range' to choose start and end dates."
+                      ? hasRangeSelection
+                        ? "Tap 'Edit range' to continue selecting dates."
+                        : "Tap 'Pick date range' to choose start and end dates."
                       : rangeStart
-                        ? "Now tap an end date to complete range."
+                        ? "Now tap an end date to finish your range."
                         : "Tap a start date on the calendar to begin."}
                   </Text>
                 )}
@@ -403,6 +406,31 @@ export function JournalScreen({ entries, brands, onDeleteEntry, onUpdateEntry })
                 ))
               ) : (
                 <Text className="text-sm text-gray-500">No brand trends yet.</Text>
+              )}
+            </View>
+            <View className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+              <View className="mb-2 flex-row items-center">
+                <Ionicons name="sparkles-outline" size={14} color="#6b7280" />
+                <Text className="ml-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Trigger insights
+                </Text>
+              </View>
+              <Text className="mb-2 text-xs text-gray-500">
+                Tagged logs: {triggerInsights.totalTaggedLogs}
+              </Text>
+              {triggerInsights.top.length ? (
+                triggerInsights.top.map((item) => (
+                  <View key={item.trigger} className="mb-2 rounded-lg bg-gray-50 px-3 py-2">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-medium text-gray-800">
+                        {item.trigger.replace("_", " ")}
+                      </Text>
+                      <Text className="text-xs font-semibold text-gray-600">{item.smokes} smokes</Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text className="text-sm text-gray-500">No trigger tags yet.</Text>
               )}
             </View>
           </ScrollView>

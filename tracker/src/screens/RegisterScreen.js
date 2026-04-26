@@ -142,7 +142,7 @@ const RegisterScreen = () => {
             {showWelcome && (
                 <Animated.View style={[styles.welcomeOverlay, { opacity: welcomeOpacity }]}>
                     <View style={styles.welcomeMessage}>
-                        <Ionicons name="checkmark-circle" size={48} color="#10b981" />
+                        <Ionicons name="checkmark-circle" size={48} color="#111827" />
                         <Text style={styles.welcomeText}>Account Created!</Text>
                         <Text style={styles.welcomeSubtext}>Please sign in to continue</Text>
                     </View>
@@ -167,7 +167,7 @@ const RegisterScreen = () => {
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Username</Text>
                             <View style={styles.inputContainer}>
-                                <Feather name="user" size={20} color="#4f46e5" style={styles.icon} />
+                                <Feather name="user" size={20} color="#374151" style={styles.icon} />
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Choose a username"
@@ -186,7 +186,7 @@ const RegisterScreen = () => {
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Unique code</Text>
                             <View style={styles.inputContainer}>
-                                <Feather name="hash" size={20} color="#4f46e5" style={styles.icon} />
+                                <Feather name="hash" size={20} color="#374151" style={styles.icon} />
                                 <Text style={styles.codePrefix}>
                                     {(username.trim().toLowerCase() || 'username') + '#'}
                                 </Text>
@@ -211,7 +211,7 @@ const RegisterScreen = () => {
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>Password</Text>
                             <View style={styles.inputContainer}>
-                                <Feather name="lock" size={20} color="#4f46e5" style={styles.icon} />
+                                <Feather name="lock" size={20} color="#374151" style={styles.icon} />
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Enter your password"
@@ -231,7 +231,7 @@ const RegisterScreen = () => {
                                     <Feather
                                         name={isPasswordVisible ? 'eye' : 'eye-off'}
                                         size={20}
-                                        color="#4f46e5"
+                                        color="#374151"
                                     />
                                 </TouchableOpacity>
                             </View>
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     },
     badge: {
         marginBottom: 10,
-        backgroundColor: '#eef2ff',
+        backgroundColor: '#f3f4f6',
         borderRadius: 999,
         paddingHorizontal: 12,
         paddingVertical: 5,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     badgeText: {
         fontSize: 12,
         fontWeight: '700',
-        color: '#4338ca',
+        color: '#374151',
         letterSpacing: 0.4,
     },
     title: {
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     link: {
-        color: '#4f46e5',
+        color: '#111827',
         fontWeight: 'bold',
         fontSize: 15,
         marginLeft: 4,

@@ -13,6 +13,9 @@ export function AddEntryModal({ visible, onClose, onSave, brands, presets, onOpe
   const [selectedCircleIds, setSelectedCircleIds] = useState([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [trigger, setTrigger] = useState("");
+  const triggerOptions = ["stress", "after_meal", "social", "boredom", "work_break", "commute"];
 
   useEffect(() => {
     if (!visible) return;
@@ -25,6 +28,8 @@ export function AddEntryModal({ visible, onClose, onSave, brands, presets, onOpe
     setShareToCircle(hasTargets);
     setSelectedCircleIds(circles?.[0]?.id ? [String(circles[0].id)] : []);
     setSelectedFriendIds(friends?.[0]?.friend?.id ? [String(friends[0].friend.id)] : []);
+    setSaveError("");
+    setTrigger("");
   }, [visible]);
   useEffect(() => {
     if (!visible) return;
@@ -50,21 +55,33 @@ export function AddEntryModal({ visible, onClose, onSave, brands, presets, onOpe
 
   const handleSave = async () => {
     if (saving) return;
-    if (!brand.trim()) return;
+    if (!brand.trim()) {
+      setSaveError("Please enter a brand before saving.");
+      return;
+    }
     const selectedCircleId = selectedCircleIds[0] || "";
-    if (shareToCircle && !selectedCircleIds.length && !selectedFriendIds.length) return;
+    if (shareToCircle && !selectedCircleIds.length && !selectedFriendIds.length) {
+      setSaveError("Choose at least one circle or friend to share.");
+      return;
+    }
     try {
+      setSaveError("");
       setSaving(true);
       await onSave({
         brand,
         quantity,
         timestamp,
         cost: costStr,
+        trigger,
         shareToCircle,
         shareCircleIds: selectedCircleIds,
         shareFriendIds: selectedFriendIds,
         ...(shareToCircle && selectedCircleId ? { circleId: selectedCircleId } : {}),
       });
+      onClose?.();
+    } catch (error) {
+      const message = error?.message || "Unable to save log. Please try again.";
+      setSaveError(message);
     } finally {
       setSaving(false);
     }
@@ -99,43 +116,72 @@ export function AddEntryModal({ visible, onClose, onSave, brands, presets, onOpe
             <Text className="mb-4 text-xl font-bold text-gray-900">Log a smoke</Text>
             <Text className="mb-1 text-sm font-medium text-gray-600">Brand</Text>
             <TextInput value={brand} onChangeText={setBrand} placeholder="Brand name" className="mb-2 rounded-xl border border-gray-200 px-3 py-3" />
-            {brands?.length ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-                {brands.map((item) => (
-                  <Pressable key={item.id || item.name || item} className="mr-2 rounded-full bg-gray-100 px-3 py-2" onPress={() => setBrand(item.name || item)}>
-                    <Text className="text-sm text-gray-700">{item.name || item}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : null}
-            <Text className="mb-1 text-sm font-medium text-gray-600">Your presets</Text>
+            <View className="mb-4" />
+            <View className="mb-4 flex-row">
+              <View className="mr-2 flex-1">
+                <Text className="mb-1 text-sm font-medium text-gray-600">Cost</Text>
+                <TextInput value={costStr} onChangeText={(t) => { setPresetUnitPrice(null); setCostStr(t); }} placeholder="e.g. 50" keyboardType="decimal-pad" className="rounded-xl border border-gray-200 px-3 py-3" />
+              </View>
+              <View className="ml-2 flex-1">
+                <Text className="mb-1 text-sm font-medium text-gray-600">How many</Text>
+                <View className="flex-row items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5">
+                  <Pressable onPress={() => setQuantity((p) => Math.max(1, p - 1))} className="rounded-lg border border-gray-300 px-3 py-1.5"><Text className="text-base">-</Text></Pressable>
+                  <Text className="text-lg font-semibold text-gray-900">{quantity}</Text>
+                  <Pressable onPress={() => setQuantity((p) => p + 1)} className="rounded-lg border border-gray-300 px-3 py-1.5"><Text className="text-base">+</Text></Pressable>
+                </View>
+              </View>
+            </View>
+            <Text className="mb-1 text-sm font-medium text-gray-600">Time</Text>
+            <View className="mb-5 rounded-xl border border-gray-200 px-3 py-3">
+              <Text className="text-gray-700">{timestampPreview}</Text>
+              <View className="mt-2 flex-row items-center">
+                <Pressable onPress={() => setTimestamp((prev) => prev - 15 * 60 * 1000)} className="mr-2 rounded-lg bg-gray-100 px-3 py-1.5">
+                  <Text className="text-xs font-semibold text-gray-700">-15m</Text>
+                </Pressable>
+                <Pressable onPress={() => setTimestamp((prev) => prev + 15 * 60 * 1000)} className="mr-2 rounded-lg bg-gray-100 px-3 py-1.5">
+                  <Text className="text-xs font-semibold text-gray-700">+15m</Text>
+                </Pressable>
+                <Pressable onPress={() => setTimestamp(Date.now())} className="rounded-lg bg-gray-100 px-3 py-1.5">
+                  <Text className="text-xs font-semibold text-gray-700">Now</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View className="mb-1 flex-row items-center justify-between">
+              <Text className="text-sm font-medium text-gray-600">Your presets</Text>
+              <Pressable className="rounded-lg bg-gray-100 px-3 py-1.5" onPress={onOpenPresets}>
+                <Text className="text-xs font-semibold text-gray-700">Edit presets</Text>
+              </Pressable>
+            </View>
             {presets?.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
                 {presets.map((item) => (
                   <Pressable key={item.id} className="mr-2 rounded-full bg-gray-900 px-3 py-2" onPress={() => applyPreset(item)}>
-                    <Text className="text-sm text-white">{item.brand} ({item.quantity})</Text>
+                    <Text className="text-sm text-white">
+                      {item.shortName || item.brand} ({item.quantity})
+                    </Text>
                   </Pressable>
                 ))}
               </ScrollView>
             ) : (
               <Text className="mb-4 text-sm text-gray-500">No presets yet</Text>
             )}
-            <Pressable className="mb-4 self-start rounded-lg bg-gray-100 px-3 py-2" onPress={onOpenPresets}>
-              <Text className="text-sm font-semibold text-gray-700">Edit presets</Text>
-            </Pressable>
-            <Text className="mb-1 text-sm font-medium text-gray-600">How many</Text>
-            <View className="mb-4 flex-row items-center">
-              <Pressable onPress={() => setQuantity((p) => Math.max(1, p - 1))} className="rounded-lg border border-gray-300 px-4 py-2"><Text className="text-lg">-</Text></Pressable>
-              <Text className="mx-4 text-lg font-semibold text-gray-900">{quantity}</Text>
-              <Pressable onPress={() => setQuantity((p) => p + 1)} className="rounded-lg border border-gray-300 px-4 py-2"><Text className="text-lg">+</Text></Pressable>
-            </View>
-            <Text className="mb-1 text-sm font-medium text-gray-600">Cost for this log (rupees, optional)</Text>
-            <TextInput value={costStr} onChangeText={(t) => { setPresetUnitPrice(null); setCostStr(t); }} placeholder="e.g. 50" keyboardType="decimal-pad" className="mb-4 rounded-xl border border-gray-200 px-3 py-3" />
-            <Text className="mb-1 text-sm font-medium text-gray-600">Time</Text>
-            <View className="mb-5 rounded-xl border border-gray-200 px-3 py-3">
-              <Text className="text-gray-700">{timestampPreview}</Text>
-              <Pressable onPress={() => setTimestamp(Date.now())} className="mt-2 self-start"><Text className="text-sm font-semibold text-gray-900">Use current time</Text></Pressable>
-            </View>
+            <Text className="mb-1 text-sm font-medium text-gray-600">Trigger (optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+              {triggerOptions.map((item) => {
+                const active = trigger === item;
+                return (
+                  <Pressable
+                    key={item}
+                    className={`mr-2 rounded-full border px-3 py-2 ${active ? "border-gray-900 bg-gray-900" : "border-gray-300 bg-white"}`}
+                    onPress={() => setTrigger((prev) => (prev === item ? "" : item))}
+                  >
+                    <Text className={`text-xs font-semibold ${active ? "text-white" : "text-gray-700"}`}>
+                      {item.replace("_", " ")}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
             <View className="mb-5 rounded-xl border border-gray-200 px-3 py-3">
             <View className="flex-row items-center justify-between">
               <Text className="text-sm font-medium text-gray-700">Share with circles & friends 👥</Text>
@@ -196,11 +242,30 @@ export function AddEntryModal({ visible, onClose, onSave, brands, presets, onOpe
               </>
             ) : null}
             </View>
-            <View className="mb-2 flex-row gap-3">
-              <Pressable className="flex-1 rounded-xl bg-gray-100 py-3" onPress={onClose} disabled={saving}><Text className="text-center font-semibold text-gray-700">Cancel</Text></Pressable>
-              <Pressable className="flex-1 rounded-xl bg-gray-900 py-3" onPress={handleSave} disabled={saving}><Text className="text-center font-semibold text-white">{saving ? "Saving..." : "Save log"}</Text></Pressable>
-            </View>
           </ScrollView>
+            <View className="mt-3 border-t border-gray-100 pt-3">
+              {saveError ? (
+                <Text className="mb-2 text-sm font-medium text-red-600">{saveError}</Text>
+              ) : null}
+            <View className="flex-row gap-3">
+              <Pressable
+                className={`flex-1 rounded-xl py-3 ${saving ? "bg-gray-200" : "bg-gray-100"}`}
+                onPress={onClose}
+                disabled={saving}
+              >
+                <Text className="text-center font-semibold text-gray-700">Cancel</Text>
+              </Pressable>
+              <Pressable
+                className={`flex-1 rounded-xl py-3 ${saving ? "bg-gray-700" : "bg-gray-900"}`}
+                onPress={handleSave}
+                disabled={saving}
+              >
+                <Text className="text-center font-semibold text-white">
+                  {saving ? "Saving..." : "Save Log"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
     </Modal>

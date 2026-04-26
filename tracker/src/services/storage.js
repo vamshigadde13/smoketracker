@@ -34,6 +34,30 @@ const safeParse = (value, fallback) => {
 };
 const normalizeBrand = (brand) => String(brand || "").trim().toLowerCase();
 const buildLocalId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const buildShortName = (brand) => {
+  const clean = String(brand || "").trim();
+  if (!clean) return "";
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  if (words.length === 2) {
+    const [a, b] = words;
+    if (b.length <= 3) return `${a.slice(0, 1)} ${b}`.toUpperCase();
+    return `${a.slice(0, 1)} ${b.slice(0, 3)}`.toUpperCase();
+  }
+  return words
+    .slice(0, 3)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+};
+const STARTER_PRESETS = [
+  { brand: "Marlboro Advance", shortName: "ADV", quantity: 1, costPerSmoke: 25 },
+  { brand: "Manchester Red", shortName: "M Red", quantity: 1, costPerSmoke: 25 },
+  { brand: "Double Shift", shortName: "Db Shift", quantity: 1, costPerSmoke: 22 },
+  { brand: "Marlboro Red", shortName: "Red", quantity: 1, costPerSmoke: 25 },
+  { brand: "Pan", shortName: "Pan", quantity: 1, costPerSmoke: 22 },
+];
+const isSamePresetBrand = (a, b) => normalizeBrand(a?.brand) === normalizeBrand(b?.brand);
 
 const readLocalEntries = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.SMOKE_ENTRIES), []);
 const readLocalBrands = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.BRANDS), []);
@@ -44,6 +68,8 @@ const readLocalNotificationSettings = async () =>
 const readLocalFriends = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.FRIENDS), []);
 const readLocalPendingFriends = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.PENDING_FRIENDS), []);
 const readLocalCircles = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.CIRCLES), []);
+const readLocalGoalSettings = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.GOAL_SETTINGS), {});
+const readLocalOnboarding = async () => safeParse(await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING), {});
 
 export const saveSmokeEntries = async (entries) =>
   AsyncStorage.setItem(STORAGE_KEYS.SMOKE_ENTRIES, JSON.stringify(entries));
@@ -53,6 +79,10 @@ export const saveFriends = async (friends) => AsyncStorage.setItem(STORAGE_KEYS.
 export const savePendingFriends = async (pending) =>
   AsyncStorage.setItem(STORAGE_KEYS.PENDING_FRIENDS, JSON.stringify(pending));
 export const saveCircles = async (circles) => AsyncStorage.setItem(STORAGE_KEYS.CIRCLES, JSON.stringify(circles));
+export const saveGoalSettings = async (settings) =>
+  AsyncStorage.setItem(STORAGE_KEYS.GOAL_SETTINGS, JSON.stringify(settings));
+export const saveOnboardingState = async (state) =>
+  AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING, JSON.stringify(state));
 
 const queueHandlers = {
   entries: {
@@ -114,21 +144,71 @@ export const getBrands = async () => {
 };
 
 export const getPresets = async () => {
+  const seedIfNeeded = async () => {
+    const seeded = (await AsyncStorage.getItem(STORAGE_KEYS.PRESETS_SEEDED)) === "1";
+    const local = await readLocalPresets();
+    if (seeded || local.length) return local;
+    const starter = STARTER_PRESETS.map((preset) => ({ id: buildLocalId(), ...preset }));
+    await savePresets(starter);
+    await AsyncStorage.setItem(STORAGE_KEYS.PRESETS_SEEDED, "1");
+    return starter;
+  };
   try {
     const presets = await fetchPresetsApi();
+    if (!presets.length) return seedIfNeeded();
     await savePresets(presets);
+    await AsyncStorage.setItem(STORAGE_KEYS.PRESETS_SEEDED, "1");
     return presets;
   } catch {
-    return readLocalPresets();
+    return seedIfNeeded();
   }
 };
+export const getLocalPresets = async () => {
+  const seeded = (await AsyncStorage.getItem(STORAGE_KEYS.PRESETS_SEEDED)) === "1";
+  const local = await readLocalPresets();
+  if (seeded || local.length) return local;
+  const starter = STARTER_PRESETS.map((preset) => ({ id: buildLocalId(), ...preset }));
+  await savePresets(starter);
+  await AsyncStorage.setItem(STORAGE_KEYS.PRESETS_SEEDED, "1");
+  return starter;
+};
 
-export const addPreset = async ({ brand, quantity, costPerSmoke }) => {
+export const saveStarterPresets = async () => {
+  const existing = await readLocalPresets();
+  const missing = STARTER_PRESETS.filter(
+    (starter) => !existing.some((item) => isSamePresetBrand(item, starter))
+  ).map((preset) => ({ id: buildLocalId(), ...preset }));
+  if (!missing.length) return { added: 0 };
+  const next = [...existing, ...missing];
+  await savePresets(next);
+  await AsyncStorage.setItem(STORAGE_KEYS.PRESETS_SEEDED, "1");
+
+  await Promise.allSettled(
+    missing.map(async (preset) => {
+      try {
+        const remote = await createPresetApi(preset);
+        const current = await readLocalPresets();
+        await savePresets(current.map((p) => (p.id === preset.id ? remote : p)));
+      } catch {
+        await enqueueOperation({ entity: "presets", op: "create", payload: preset });
+      }
+    })
+  );
+  return { added: missing.length };
+};
+
+export const addPreset = async ({ brand, shortName, quantity, costPerSmoke }) => {
   const presets = await readLocalPresets();
   const unit = normalizeCost(costPerSmoke);
+  const cleanBrand = String(brand || "").trim();
+  if (presets.some((item) => normalizeBrand(item.brand) === normalizeBrand(cleanBrand))) {
+    throw new Error("Preset already exists for this brand.");
+  }
+  const cleanShortName = String(shortName || "").trim() || buildShortName(cleanBrand);
   const localPreset = {
     id: buildLocalId(),
-    brand: String(brand || "").trim(),
+    brand: cleanBrand,
+    ...(cleanShortName ? { shortName: cleanShortName } : {}),
     quantity: Number(quantity) || 1,
     ...(unit !== undefined ? { costPerSmoke: unit } : {}),
   };
@@ -145,12 +225,18 @@ export const addPreset = async ({ brand, quantity, costPerSmoke }) => {
   }
 };
 
-export const updatePreset = async ({ id, brand, quantity, costPerSmoke }) => {
+export const updatePreset = async ({ id, brand, shortName, quantity, costPerSmoke }) => {
   const presets = await readLocalPresets();
   const unit = normalizeCost(costPerSmoke);
+  const cleanBrand = String(brand || "").trim();
+  if (presets.some((item) => item.id !== id && normalizeBrand(item.brand) === normalizeBrand(cleanBrand))) {
+    throw new Error("Another preset already exists for this brand.");
+  }
+  const cleanShortName = String(shortName || "").trim() || buildShortName(cleanBrand);
   const payload = {
     id,
-    brand: String(brand || "").trim(),
+    brand: cleanBrand,
+    ...(cleanShortName ? { shortName: cleanShortName } : {}),
     quantity: Number(quantity) || 1,
     ...(unit !== undefined ? { costPerSmoke: unit } : {}),
   };
@@ -172,7 +258,7 @@ export const deletePreset = async (id) => {
   }
 };
 
-export const addSmokeEntry = async ({ brand, quantity, timestamp, cost, shareToCircle, circleId, shareCircleIds, shareFriendIds }) => {
+export const addSmokeEntry = async ({ brand, quantity, timestamp, cost, trigger, shareToCircle, circleId, shareCircleIds, shareFriendIds }) => {
   const [entries, brands] = await Promise.all([readLocalEntries(), readLocalBrands()]);
   const cleanBrand = String(brand || "").trim();
   const payload = {
@@ -184,6 +270,7 @@ export const addSmokeEntry = async ({ brand, quantity, timestamp, cost, shareToC
     shareFriendIds: Array.isArray(shareFriendIds) ? shareFriendIds.map(String) : [],
     ...(circleId ? { circleId } : {}),
     ...(normalizeCost(cost) !== undefined ? { cost: normalizeCost(cost) } : {}),
+    ...(String(trigger || "").trim() ? { trigger: String(trigger).trim() } : {}),
   };
   const localEntry = { id: buildLocalId(), ...payload };
   await saveSmokeEntries([localEntry, ...entries]);
@@ -218,7 +305,7 @@ export const deleteSmokeEntry = async (id) => {
   }
 };
 
-export const updateSmokeEntry = async ({ id, brand, quantity, timestamp, cost, shareToCircle, circleId, shareCircleIds, shareFriendIds }) => {
+export const updateSmokeEntry = async ({ id, brand, quantity, timestamp, cost, trigger, shareToCircle, circleId, shareCircleIds, shareFriendIds }) => {
   const payload = {
     id,
     brand: String(brand || "").trim(),
@@ -229,6 +316,7 @@ export const updateSmokeEntry = async ({ id, brand, quantity, timestamp, cost, s
     ...(shareFriendIds === undefined ? {} : { shareFriendIds: Array.isArray(shareFriendIds) ? shareFriendIds.map(String) : [] }),
     ...(circleId ? { circleId } : {}),
     ...(normalizeCost(cost) !== undefined ? { cost: normalizeCost(cost) } : {}),
+    ...(String(trigger || "").trim() ? { trigger: String(trigger).trim() } : {}),
   };
   const entries = await readLocalEntries();
   await saveSmokeEntries(entries.map((e) => (e.id !== id ? e : { ...e, ...payload })));
@@ -270,6 +358,8 @@ export const saveProfile = async (profile) => {
 export const DEFAULT_NOTIFICATION_SETTINGS = {
   enabledDailyCheckin: false,
   enabledNoLogNudge: false,
+  enabledSmartNudges: false,
+  enabledWeeklySummary: false,
   dailyTime: { hour: 20, minute: 0 },
   quietHoursEnabled: true,
   quietStart: { hour: 22, minute: 0 },
@@ -283,6 +373,8 @@ const normalizeClockTime = (raw, fallback) => ({
 const normalizeNotificationSettings = (o = {}) => ({
   enabledDailyCheckin: Boolean(o.enabledDailyCheckin),
   enabledNoLogNudge: Boolean(o.enabledNoLogNudge),
+  enabledSmartNudges: Boolean(o.enabledSmartNudges),
+  enabledWeeklySummary: Boolean(o.enabledWeeklySummary),
   dailyTime: normalizeClockTime(o.dailyTime, DEFAULT_NOTIFICATION_SETTINGS.dailyTime),
   quietHoursEnabled: o.quietHoursEnabled === undefined ? true : Boolean(o.quietHoursEnabled),
   quietStart: normalizeClockTime(o.quietStart, DEFAULT_NOTIFICATION_SETTINGS.quietStart),
@@ -290,15 +382,16 @@ const normalizeNotificationSettings = (o = {}) => ({
   permissionAsked: Boolean(o.permissionAsked),
 });
 export const getNotificationSettings = async () => {
+  const local = normalizeNotificationSettings(await readLocalNotificationSettings());
   try {
     const remote = normalizeNotificationSettings(normalizeNotificationSettingsApi(await fetchNotificationSettingsApi()));
-    const next = { ...DEFAULT_NOTIFICATION_SETTINGS, ...remote };
+    const next = { ...DEFAULT_NOTIFICATION_SETTINGS, ...local, ...remote };
     await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(next));
     return next;
   } catch {
     return {
       ...DEFAULT_NOTIFICATION_SETTINGS,
-      ...normalizeNotificationSettings(await readLocalNotificationSettings()),
+      ...local,
     };
   }
 };
@@ -309,7 +402,7 @@ export const saveNotificationSettings = async (settings) => {
     const remote = normalizeNotificationSettings(
       normalizeNotificationSettingsApi(await saveNotificationSettingsApi(next))
     );
-    const merged = { ...DEFAULT_NOTIFICATION_SETTINGS, ...remote };
+    const merged = { ...DEFAULT_NOTIFICATION_SETTINGS, ...next, ...remote };
     await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_SETTINGS, JSON.stringify(merged));
     return merged;
   } catch {
@@ -357,6 +450,43 @@ export const clearProfileStorage = async () => {
   }
 };
 export const clearAllAppStorage = async () => AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
+
+export const DEFAULT_GOAL_SETTINGS = {
+  dailyLimit: 0,
+  weeklyLimit: 0,
+};
+const normalizeGoalSettings = (raw = {}) => ({
+  dailyLimit: Math.max(0, Number(raw.dailyLimit) || 0),
+  weeklyLimit: Math.max(0, Number(raw.weeklyLimit) || 0),
+});
+export const getGoalSettings = async () => ({
+  ...DEFAULT_GOAL_SETTINGS,
+  ...normalizeGoalSettings(await readLocalGoalSettings()),
+});
+export const saveGoalSettingsWithMerge = async (partial) => {
+  const current = await getGoalSettings();
+  const next = { ...current, ...normalizeGoalSettings(partial) };
+  await saveGoalSettings(next);
+  return next;
+};
+
+export const DEFAULT_ONBOARDING_STATE = {
+  seenFirstLoginOnboarding: false,
+  completedPreset: false,
+  completedReminders: false,
+  completedQuietHours: false,
+  completedGoal: false,
+};
+export const getOnboardingState = async () => ({
+  ...DEFAULT_ONBOARDING_STATE,
+  ...(await readLocalOnboarding()),
+});
+export const saveOnboardingStateWithMerge = async (partial) => {
+  const current = await getOnboardingState();
+  const next = { ...current, ...partial };
+  await saveOnboardingState(next);
+  return next;
+};
 
 export const getFriendsData = async () => {
   try {
@@ -454,5 +584,121 @@ export const buildExportPayload = async () => ({
   brands: await getBrands(),
   presets: await getPresets(),
   profile: await getProfile(),
+  goals: await getGoalSettings(),
 });
+
+const normalizeImportEntry = (entry) => {
+  const brand = String(entry?.brand || "").trim();
+  if (!brand) return null;
+  const quantity = Math.max(1, Number(entry?.quantity) || 1);
+  const timestamp = Number(entry?.timestamp) || Date.now();
+  const cost = normalizeCost(entry?.cost);
+  const trigger = String(entry?.trigger || "").trim();
+  return {
+    id: String(entry?.id || buildLocalId()),
+    brand,
+    quantity,
+    timestamp,
+    ...(cost !== undefined ? { cost } : {}),
+    ...(trigger ? { trigger } : {}),
+  };
+};
+
+const normalizeImportPreset = (preset) => {
+  const brand = String(preset?.brand || "").trim();
+  if (!brand) return null;
+  const quantity = Math.max(1, Number(preset?.quantity) || 1);
+  const costPerSmoke = normalizeCost(preset?.costPerSmoke);
+  const shortName = String(preset?.shortName || "").trim();
+  return {
+    id: String(preset?.id || buildLocalId()),
+    brand,
+    ...(shortName ? { shortName } : {}),
+    quantity,
+    ...(costPerSmoke !== undefined ? { costPerSmoke } : {}),
+  };
+};
+
+const normalizeImportBrand = (brand) => {
+  const name = String(brand?.name || brand || "").trim();
+  if (!name) return null;
+  return { id: String(brand?.id || buildLocalId()), name };
+};
+
+export const importBackupPayload = async (payload) => {
+  const entries = Array.isArray(payload?.entries)
+    ? payload.entries.map(normalizeImportEntry).filter(Boolean)
+    : [];
+  const presets = Array.isArray(payload?.presets)
+    ? payload.presets.map(normalizeImportPreset).filter(Boolean)
+    : [];
+  const brandsFromPayload = Array.isArray(payload?.brands)
+    ? payload.brands.map(normalizeImportBrand).filter(Boolean)
+    : [];
+  const profile = { ...DEFAULT_PROFILE, ...normalizeProfileFields(payload?.profile || {}) };
+  const goals = { ...DEFAULT_GOAL_SETTINGS, ...normalizeGoalSettings(payload?.goals || {}) };
+
+  const brandsFromEntries = Array.from(
+    new Set(entries.map((entry) => normalizeBrand(entry.brand)))
+  ).map((key) => ({ id: buildLocalId(), name: key }));
+  const mergedBrandsMap = new Map();
+  [...brandsFromPayload, ...brandsFromEntries].forEach((brand) => {
+    mergedBrandsMap.set(normalizeBrand(brand.name), { ...brand, name: String(brand.name || "").trim() });
+  });
+  const brands = Array.from(mergedBrandsMap.values()).filter((brand) => brand.name);
+
+  await Promise.all([
+    saveSmokeEntries(entries.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))),
+    savePresets(presets),
+    saveBrands(brands),
+    AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile)),
+    AsyncStorage.setItem(STORAGE_KEYS.GOAL_SETTINGS, JSON.stringify(goals)),
+  ]);
+
+  await Promise.allSettled(
+    brands.map(async (brand) => {
+      try {
+        await createBrandApi(brand.name);
+      } catch {
+        await enqueueOperation({ entity: "brands", op: "create", payload: { name: brand.name } });
+      }
+    })
+  );
+  await Promise.allSettled(
+    presets.map(async (preset) => {
+      const p = {
+        brand: preset.brand,
+        ...(String(preset.shortName || "").trim() ? { shortName: String(preset.shortName).trim() } : {}),
+        quantity: preset.quantity,
+        ...(preset.costPerSmoke !== undefined ? { costPerSmoke: preset.costPerSmoke } : {}),
+      };
+      try {
+        await createPresetApi(p);
+      } catch {
+        await enqueueOperation({ entity: "presets", op: "create", payload: p });
+      }
+    })
+  );
+  await Promise.allSettled(
+    entries.map(async (entry) => {
+      const p = { brand: entry.brand, quantity: entry.quantity, timestamp: entry.timestamp, ...(entry.cost !== undefined ? { cost: entry.cost } : {}) };
+      try {
+        await createEntryApi(p);
+      } catch {
+        await enqueueOperation({ entity: "entries", op: "create", payload: p });
+      }
+    })
+  );
+  try {
+    await saveProfileApi(profile);
+  } catch {
+    await enqueueOperation({ entity: "profile", op: "upsert", payload: profile });
+  }
+
+  return {
+    entries: entries.length,
+    presets: presets.length,
+    brands: brands.length,
+  };
+};
 

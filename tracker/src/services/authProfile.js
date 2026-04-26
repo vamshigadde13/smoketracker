@@ -70,3 +70,36 @@ export const getLoggedInUserProfile = async () => {
     return null;
   }
 };
+
+export const deleteAccountOnServer = async ({ reason } = {}) => {
+  const token = await getStoredAuthToken();
+  if (!token) throw new Error("You are not logged in.");
+
+  const candidates = [
+    `${API_BASE_URL}/api/v1/user/currentuser`,
+    `${API_BASE_URL}/api/v1/user/me`,
+    `${API_BASE_URL}/api/v1/user/account`,
+    `${API_BASE_URL}/api/v1/user/delete-account`,
+  ];
+
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...(String(reason || "").trim() ? { reason: String(reason).trim() } : {}),
+        }),
+      });
+      if (res.ok) return true;
+      lastError = new Error(`Delete failed (${res.status})`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Unable to delete account right now.");
+};

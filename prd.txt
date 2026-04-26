@@ -1,0 +1,196 @@
+Product: Smoke Tracker
+Last updated: April 2026
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+A mobile app that helps users track smoking habits by logging each session and
+viewing simple analytics: frequency, brands, spend, and patterns.
+
+- Account-based: users sign up and sign in before tracking.
+- Offline-tolerant: writes are applied locally first and queued for background
+  sync when network is unavailable.
+- Fast, minimal UX: goal is to log in seconds.
+- Hosted API backend: app defaults to deployed backend, with env override.
+
+================================================================================
+2. GOALS
+================================================================================
+
+Primary
+- Increase awareness of smoking habits.
+- Track: time, brand, quantity, optional cost per log.
+- Simple analytics (totals, brands, peaks, streaks).
+
+Secondary
+- Support reduction through awareness (no medical claims).
+- Keep logging to 1–2 taps where possible.
+- Keep data resilient across unstable connectivity with automatic sync recovery.
+
+================================================================================
+3. TARGET USERS
+================================================================================
+
+People who want to track usage, compare days, and understand patterns with a
+simple account-based experience and reliable sync.
+
+================================================================================
+4. SHIPPED FEATURES (CURRENT BUILD)
+================================================================================
+
+Stack
+- Frontend: React Native (Expo), JavaScript, NativeWind (Tailwind-style).
+- Persistence: @react-native-async-storage/async-storage.
+- Navigation: bottom tabs (React Navigation).
+- Backend access: token-authenticated API (fetch/axios) with hosted default URL.
+
+4.0 Authentication
+- Sign up: create account using username + password.
+- Sign in: authenticate and store token locally for API requests.
+- Session gate: unauthenticated users see Login/Register; authenticated users
+  enter main tracker tabs.
+- Logout: Profile action clears auth token on device.
+
+4.1 Home
+- Header: optional greeting (profile name/alias) + “Smoke Tracker” subtitle.
+- Daily logging streak (consecutive local days with ≥1 log): flame badge with
+  count; “at risk” hint if today not logged but streak was active yesterday.
+- Today card: smokes logged, comparison vs yesterday, log count, optional spend.
+- This week: total (Sun–today).
+- Primary CTA: Log smoke (opens add modal).
+- Quick presets: horizontal chips (from Presets) for one-tap log with quantity
+  and optional cost.
+- Recent brands: one-tap log (1 smoke) by brand.
+- At a glance: all-time smokes, tracked spend, last log, latest logs preview.
+- Pull-to-refresh to reload storage.
+
+4.2 Add entry (modal)
+- Brand (text + suggestions from history).
+- Quantity (default 1).
+- Optional cost (per log), INR-style formatting in UI.
+- Timestamp (auto; adjustable in UI as implemented).
+- Link to manage Presets (opens full-screen preset editor).
+
+4.3 History
+- Tabs: Today | Month.
+- Today: sectioned list by day, entries newest first; swipe/actions to delete
+  (with confirm); empty state; pull-to-refresh.
+- Month: calendar heatmap (intensity by total smokes per day); month navigation;
+  optional brand filter; optional two-tap date range + range summary (logs,
+  total smokes, breakdown by brand); tap a day to list that day’s logs.
+- Screen header matches app pattern (title + “Smoke Tracker” + icon).
+
+4.4 Insights (Analytics)
+- Summary metrics from all logs: today / week / month totals, log counts, spend
+  where cost exists.
+- Brand highlights, peak hour, time-of-day period distribution.
+- Spending section (INR; logs with cost only).
+- Empty state when there are no entries.
+- Header pattern consistent with other tabs.
+
+4.5 Profile
+- Editable profile: name, alias, bio.
+- Name is registration-controlled; alias and bio are editable in app.
+- “Your data”: export workbook (.xlsx multi-sheet) with CSV fallback; share via
+  device sheet; copy explains no upload.
+- Notifications: daily check-in / no-log nudge toggles, quiet hours, reminder
+  time, permission prompt.
+- Sync status: queued operation count, last success time, last error, and
+  manual "Sync now" action.
+- Danger zone: clear logs+brands, presets, profile, or all app data (confirmed).
+- Stats: counts for logs, brands, presets.
+- Header: “On this device” subtitle + icon.
+
+4.6 Presets (modal from Add entry)
+- Create / edit / delete presets: brand, quantity, optional cost per smoke.
+- Used for quick logging from Home and from the add modal.
+
+4.7 Shared UI
+- ConfirmModal for destructive actions.
+- MessageModal for non-blocking errors/messages (e.g. export failures).
+- ScreenHeader component on secondary tabs for consistent branding.
+
+================================================================================
+5. DATA MODEL (AS IMPLEMENTED)
+================================================================================
+
+Smoke entry: id, timestamp, brand, quantity, optional cost.
+
+Brand: id, name (derived from logging and storage helpers).
+
+Preset
+- id, brand, quantity, optional costPerSmoke
+
+Profile
+- name, alias, bio (and any fields extended in storage)
+
+Notification settings
+- enabledDailyCheckin, enabledNoLogNudge, dailyTime, quiet hours,
+  permissionAsked
+
+Sync queue op
+- entity, op, payload, queued timestamps/status
+
+Auth/session
+- token (device storage), user identity from auth endpoints
+
+Primary data is API-backed with AsyncStorage cache + queue-based offline
+fallback (see tracker/src/services/storage.js and sync queue helpers).
+
+================================================================================
+6. ANALYTICS (IMPLEMENTED)
+================================================================================
+
+- Aggregations by day / week / month; week starts Sunday (aligned with Home “This week” copy).
+- Brand counts and sorting; peak hour; morning / afternoon / evening / night
+  buckets.
+- Spend sums where cost is present.
+
+================================================================================
+7. SYNC BEHAVIOR (IMPLEMENTED)
+================================================================================
+
+- Local-first writes for entries, brands, presets, profile, and notification
+  settings.
+- On API failure, operations are queued and retried via flush on app activation
+  and refresh.
+- Reads prefer API and fall back to local cache when unavailable.
+- Profile shows queue health and supports manual sync trigger.
+
+================================================================================
+8. NON-GOALS (V1)
+================================================================================
+
+- No multi-account switching in a single session flow.
+- No real-time collaborative/shared data between users.
+- No social features or ads.
+
+================================================================================
+9. FUTURE ENHANCEMENTS
+================================================================================
+
+- Goals (e.g. max smokes per day), reminders.
+- Charts (line/pie) where they add clear value.
+- Stronger conflict resolution semantics for offline edits.
+- iOS-specific polish and store release checklist.
+
+================================================================================
+10. SUCCESS METRICS (PRODUCT)
+================================================================================
+
+- Repeat logging (e.g. streak maintenance).
+- Logs per active user per week.
+- Retention proxies (return sessions).
+- Queue drain reliability (pending op age / sync success rate).
+
+================================================================================
+11. RISKS
+================================================================================
+
+- Users may stop logging; streak and gentle copy aim to reinforce habit.
+- Over-complex UI; keep primary flows short.
+- Connectivity failures can delay server consistency; queue visibility and retry
+  reduce impact.
+- Privacy: auth + synced data implies backend data handling requirements in
+  addition to local messaging.

@@ -14,6 +14,7 @@ import { FriendsScreen } from "./src/screens/FriendsScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import RegisterScreen from "./src/screens/RegisterScreen";
 import { AddEntryModal } from "./src/components/AddEntryModal";
+import { OnboardingChecklistModal } from "./src/components/OnboardingChecklistModal";
 import {
   addPreset,
   addFriendByCode,
@@ -25,11 +26,17 @@ import {
   getBrands,
   getCircles,
   getFriendsData,
+  getLocalPresets,
   getNotificationSettings,
+  getGoalSettings,
+  getOnboardingState,
   getPresets,
   getProfile,
   getSmokeEntries,
   saveNotificationSettings,
+  saveGoalSettingsWithMerge,
+  saveOnboardingStateWithMerge,
+  saveStarterPresets,
   saveProfile,
   updatePreset,
   updateSmokeEntry,
@@ -56,6 +63,9 @@ function AppContent() {
   const [presets, setPresets] = useState([]);
   const [profile, setProfile] = useState(null);
   const [notificationSettings, setNotificationSettings] = useState(null);
+  const [goalSettings, setGoalSettings] = useState(null);
+  const [onboardingState, setOnboardingState] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [notificationPermissionStatus, setNotificationPermissionStatus] = useState("undetermined");
   const [modalVisible, setModalVisible] = useState(false);
   const [presetsVisible, setPresetsVisible] = useState(false);
@@ -83,22 +93,30 @@ function AppContent() {
       setPresets([]);
       setProfile(null);
       setNotificationSettings(null);
+      setGoalSettings(null);
+      setOnboardingState(null);
       setModalVisible(false);
       setPresetsVisible(false);
       setSyncStatus(await getSyncStatus());
       return;
     }
 
+    // Local-first presets: paint immediately, then API refresh updates later.
+    const localPresets = await getLocalPresets();
+    setPresets(localPresets);
+
     if (withQueueFlush) {
       await flushSyncQueue();
     }
 
-    const [allEntries, allBrands, allPresets, userProfile, notif, authUser, friendsData, allCircles] = await Promise.all([
+    const [allEntries, allBrands, allPresets, userProfile, notif, goals, onboarding, authUser, friendsData, allCircles] = await Promise.all([
       getSmokeEntries(),
       getBrands(),
       getPresets(),
       getProfile(),
       getNotificationSettings(),
+      getGoalSettings(),
+      getOnboardingState(),
       getLoggedInUserProfile(),
       getFriendsData(),
       getCircles(),
@@ -123,6 +141,9 @@ function AppContent() {
     setPendingFriends(friendsData.pending || []);
     setCircles(allCircles || []);
     setNotificationSettings(notif);
+    setGoalSettings(goals);
+    setOnboardingState(onboarding);
+    setShowOnboarding(!onboarding?.seenFirstLoginOnboarding);
     await syncDevicePushTokenAsync({ permissionStatus: notificationPermissionStatus });
     setSyncStatus(await getSyncStatus());
   };
@@ -231,6 +252,20 @@ function AppContent() {
       setNotificationPermissionStatus(await requestNotificationPermissionAsync());
     });
   };
+  const handleUpdateGoals = async (partial) => {
+    const next = await saveGoalSettingsWithMerge(partial);
+    setGoalSettings(next);
+  };
+  const handleAddStarterPresets = async () => {
+    await runLocked("presets:starter", async () => {
+      await saveStarterPresets();
+      await refreshData();
+    });
+  };
+  const handleCompleteOnboardingStep = async (partial) => {
+    const next = await saveOnboardingStateWithMerge(partial);
+    setOnboardingState(next);
+  };
 
   return (
     <SafeAreaProvider>
@@ -271,6 +306,7 @@ function AppContent() {
                     entries={entries}
                     presets={presets}
                     profile={profile}
+                    goals={goalSettings}
                     onOpenAddModal={() => setModalVisible(true)}
                     onQuickLog={handleQuickLog}
                     onRefresh={refreshData}
@@ -334,10 +370,15 @@ function AppContent() {
                     notificationSettings={notificationSettings}
                     notificationPermissionStatus={notificationPermissionStatus}
                     onUpdateNotificationSettings={handleUpdateNotificationSettings}
+                    goals={goalSettings}
+                    onUpdateGoals={handleUpdateGoals}
                     onRequestNotificationPermission={handleRequestNotificationPermission}
                     logCount={entries.length}
                     brandCount={brands.length}
                     presetCount={presets.length}
+                    presets={presets}
+                    onOpenPresetsManager={() => setPresetsVisible(true)}
+                    onAddStarterPresets={handleAddStarterPresets}
                     syncStatus={syncStatus}
                     onSyncNow={() => refreshData({ withQueueFlush: true })}
                   />
@@ -372,6 +413,18 @@ function AppContent() {
                 />
               </View>
             </Modal>
+            <OnboardingChecklistModal
+              visible={showOnboarding}
+              onboarding={onboardingState}
+              notificationSettings={notificationSettings}
+              goalSettings={goalSettings}
+              presetCount={presets.length}
+              onClose={async () => {
+                await handleCompleteOnboardingStep({ seenFirstLoginOnboarding: true });
+                setShowOnboarding(false);
+              }}
+              onUpdateOnboarding={handleCompleteOnboardingStep}
+            />
           </>
         )}
       </NavigationContainer>

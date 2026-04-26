@@ -195,6 +195,53 @@ const loginUser = async (req, res) => {
     }
 };
 
+const resetPasswordByLoginId = async (req, res) => {
+    try {
+        const loginIdRaw = String(req.body?.loginId || "").trim();
+        const newPassword = String(req.body?.newPassword || "");
+        const loginId = loginIdRaw.toLowerCase();
+
+        if (!loginId || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Login ID and new password are required",
+            });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 6 characters",
+            });
+        }
+
+        const user = await User.findOne({
+            $or: [{ username: loginId }, { _id: loginIdRaw }],
+        });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found for the provided ID",
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        user.passwordHash = await bcrypt.hash(newPassword, salt);
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset successful. Please login with your new password.",
+        });
+    } catch (error) {
+        console.error("Error resetting password:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error during password reset",
+            error: error.message,
+        });
+    }
+};
+
 const getAllUsers = async (req, res) => {
     try {
         const users = await User.find({}).select("-__v -passwordHash");
@@ -349,6 +396,7 @@ const deleteUser = async (req, res) => {
 export {
     registerUser,
     loginUser,
+    resetPasswordByLoginId,
     getAllUsers,
     getCurrentUser,
     updateUser,

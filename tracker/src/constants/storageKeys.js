@@ -7,6 +7,9 @@ export const STORAGE_KEYS = {
   FRIENDS: "friends",
   PENDING_FRIENDS: "pending_friends",
   CIRCLES: "circles",
+  GOAL_SETTINGS: "goal_settings",
+  ONBOARDING: "onboarding",
+  PRESETS_SEEDED: "presets_seeded",
   LAST_PUSH_TOKEN: "last_push_token",
 };
 
