@@ -3,6 +3,8 @@ import NotificationSettings from "../models/notificationSettingsModel.js";
 const DEFAULTS = {
   enabledDailyCheckin: false,
   enabledNoLogNudge: false,
+  enabledSmartNudges: false,
+  enabledWeeklySummary: false,
   dailyTime: { hour: 20, minute: 0 },
   quietHoursEnabled: true,
   quietStart: { hour: 22, minute: 0 },
@@ -19,6 +21,8 @@ const sanitizeClock = (value, fallback) => {
 const normalizeSettings = (raw = {}) => ({
   enabledDailyCheckin: Boolean(raw.enabledDailyCheckin),
   enabledNoLogNudge: Boolean(raw.enabledNoLogNudge),
+  enabledSmartNudges: Boolean(raw.enabledSmartNudges),
+  enabledWeeklySummary: Boolean(raw.enabledWeeklySummary),
   dailyTime: sanitizeClock(raw.dailyTime, DEFAULTS.dailyTime),
   quietHoursEnabled: raw.quietHoursEnabled === undefined ? true : Boolean(raw.quietHoursEnabled),
   quietStart: sanitizeClock(raw.quietStart, DEFAULTS.quietStart),

@@ -19,6 +19,8 @@ const notificationSettingsSchema = new mongoose.Schema(
     },
     enabledDailyCheckin: { type: Boolean, default: false },
     enabledNoLogNudge: { type: Boolean, default: false },
+    enabledSmartNudges: { type: Boolean, default: false },
+    enabledWeeklySummary: { type: Boolean, default: false },
     dailyTime: {
       type: clockTimeSchema,
       default: () => ({ hour: 20, minute: 0 }),

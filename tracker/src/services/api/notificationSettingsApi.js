@@ -9,6 +9,8 @@ const normalizeClock = (value, fallback) => ({
 export const normalizeNotificationSettingsApi = (settings = {}) => ({
   enabledDailyCheckin: Boolean(settings.enabledDailyCheckin),
   enabledNoLogNudge: Boolean(settings.enabledNoLogNudge),
+  enabledSmartNudges: Boolean(settings.enabledSmartNudges),
+  enabledWeeklySummary: Boolean(settings.enabledWeeklySummary),
   dailyTime: normalizeClock(settings.dailyTime, { hour: 20, minute: 0 }),
   quietHoursEnabled: settings.quietHoursEnabled === undefined ? true : Boolean(settings.quietHoursEnabled),
   quietStart: normalizeClock(settings.quietStart, { hour: 22, minute: 0 }),

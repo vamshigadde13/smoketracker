@@ -63,7 +63,21 @@ export const syncDevicePushTokenAsync = async ({ permissionStatus }) => {
   const Notifications = await getNotificationsModule();
   if (!Notifications || permissionStatus !== "granted") return null;
   if (Platform.OS !== "android") return null;
-  const tokenResult = await Notifications.getExpoPushTokenAsync();
+  let tokenResult = null;
+  try {
+    tokenResult = await Notifications.getExpoPushTokenAsync();
+  } catch (error) {
+    const message = String(error?.message || "");
+    // Avoid breaking app flows (like log-save refresh) when FCM credentials are missing.
+    if (message.toLowerCase().includes("default firebaseapp is not initialized")) {
+      console.warn(
+        "[PushToken] Firebase app not initialized for FCM. Complete Expo push setup (Push notifications > FCM credentials)."
+      );
+      return null;
+    }
+    console.warn("[PushToken] Failed to fetch Expo push token:", message || error);
+    return null;
+  }
   const expoPushToken = String(tokenResult?.data || "").trim();
   if (!expoPushToken) return null;
 
